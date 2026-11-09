@@ -1,0 +1,8 @@
+Tabler Icons
+Copyright (c) 2020-2025 Paweł Kuna
+MIT License: https://github.com/tabler/tabler-icons/blob/main/LICENSE
+
+NanoSVG
+Copyright (c) 2013-14 Mikko Mononen
+Permissive zlib-style license; see the copyright and license notice at the top of the vendored headers in ../third_party/nanosvg/.
+Source: https://github.com/memononen/nanosvg
