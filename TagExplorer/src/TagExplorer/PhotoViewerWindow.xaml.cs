@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
+using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using System.Windows.Media.Imaging;
 namespace TagExplorer;
 public partial class PhotoViewerWindow : Window
