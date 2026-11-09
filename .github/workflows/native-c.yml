@@ -1,0 +1,30 @@
+name: Build Tag Explorer (Native C)
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'TagExplorer-native/**'
+      - '.github/workflows/native-c.yml'
+  pull_request:
+    paths:
+      - 'TagExplorer-native/**'
+      - '.github/workflows/native-c.yml'
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure x64 Release
+        run: cmake -S TagExplorer-native -B build-native -A x64 -DCMAKE_BUILD_TYPE=Release
+      - name: Build native C application
+        run: cmake --build build-native --config Release --parallel
+      - name: Stage portable application
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts/TagExplorer-Native | Out-Null
+          Copy-Item build-native/Release/TagExplorer.exe artifacts/TagExplorer-Native/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TagExplorer-Native-win-x64
+          path: artifacts/TagExplorer-Native/**
