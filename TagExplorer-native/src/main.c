@@ -33,6 +33,9 @@
 #define ID_TAG_LIST 1113
 #define ID_ADDRESS 1114
 #define ID_NAVIGATE 1115
+#define ID_MONTH_TAG 1116
+#define ID_YEAR_TAG 1117
+#define ID_MONTH_FIRST 2101
 #define ID_VIEW_ROTATE_LEFT 1201
 #define ID_VIEW_ROTATE_RIGHT 1202
 #define ID_VIEW_RENAME 1203
@@ -131,12 +134,14 @@ static void open_viewer(int index){
 #define ID_RENAME_OK 1302
 #define ID_RENAME_CANCEL 1303
 static wchar_t rename_input[MAX_PATH];
+static const wchar_t *prompt_title=L"Rename original image";
+static const wchar_t *prompt_label=L"New file name (the original image will be renamed in place):";
 static HWND rename_edit;
 static LRESULT CALLBACK rename_prompt_proc(HWND d,UINT msg,WPARAM wp,LPARAM lp){
  switch(msg){
  case WM_DRAWITEM:icons_draw_button((DRAWITEMSTRUCT*)lp);return TRUE;
  case WM_CREATE:{
-  CreateWindowExW(0,L"STATIC",L"New file name (the original image will be renamed in place):",WS_CHILD|WS_VISIBLE,16,16,390,22,d,NULL,app_instance,NULL);
+  CreateWindowExW(0,L"STATIC",prompt_label,WS_CHILD|WS_VISIBLE,16,16,390,22,d,NULL,app_instance,NULL);
   rename_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",rename_input,WS_CHILD|WS_VISIBLE|WS_TABSTOP|ES_AUTOHSCROLL,16,44,390,28,d,(HMENU)(INT_PTR)ID_RENAME_EDIT,app_instance,NULL);
   SendMessageW(rename_edit,WM_SETFONT,(WPARAM)font_ui,TRUE);
   HWND ok=make_button(d,L"Rename",ID_RENAME_OK,230,86,84,32);
@@ -149,11 +154,12 @@ static LRESULT CALLBACK rename_prompt_proc(HWND d,UINT msg,WPARAM wp,LPARAM lp){
  }
  return DefWindowProcW(d,msg,wp,lp);
 }
-static int prompt_rename(HWND owner,const wchar_t *current_name,wchar_t *new_name,size_t capacity){
+static int prompt_value(HWND owner,const wchar_t *title,const wchar_t *label,const wchar_t *current_name,wchar_t *new_name,size_t capacity){
+ prompt_title=title;prompt_label=label;
  WNDCLASSW wc={0};wc.lpfnWndProc=rename_prompt_proc;wc.hInstance=app_instance;wc.lpszClassName=L"TagExplorerRenamePrompt";wc.hCursor=LoadCursorW(NULL,IDC_ARROW);wc.hbrBackground=(HBRUSH)(COLOR_WINDOW+1);
  RegisterClassW(&wc);
  lstrcpynW(rename_input,current_name,MAX_PATH);
- HWND d=CreateWindowExW(WS_EX_DLGMODALFRAME, L"TagExplorerRenamePrompt",L"Rename original image",WS_CAPTION|WS_SYSMENU|WS_POPUP|WS_VISIBLE,CW_USEDEFAULT,CW_USEDEFAULT,440,168,owner,NULL,app_instance,NULL);
+ HWND d=CreateWindowExW(WS_EX_DLGMODALFRAME, L"TagExplorerRenamePrompt",prompt_title,WS_CAPTION|WS_SYSMENU|WS_POPUP|WS_VISIBLE,CW_USEDEFAULT,CW_USEDEFAULT,440,168,owner,NULL,app_instance,NULL);
  if(!d)return 0;
  RECT r;GetWindowRect(d,&r);int x=(GetSystemMetrics(SM_CXSCREEN)-(r.right-r.left))/2,y=(GetSystemMetrics(SM_CYSCREEN)-(r.bottom-r.top))/2;SetWindowPos(d,NULL,x,y,0,0,SWP_NOSIZE|SWP_NOZORDER);
  EnableWindow(owner,FALSE);SetForegroundWindow(d);SetFocus(rename_edit);
@@ -162,6 +168,7 @@ static int prompt_rename(HWND owner,const wchar_t *current_name,wchar_t *new_nam
  if(!rename_input[0])return 0;
  lstrcpynW(new_name,rename_input,(int)capacity);return 1;
 }
+static int prompt_rename(HWND owner,const wchar_t *current_name,wchar_t *new_name,size_t capacity){return prompt_value(owner,L"Rename original image",L"New file name (the original image will be renamed in place):",current_name,new_name,capacity);}
 static void viewer_rename(HWND w){
  if(viewer_index<0||viewer_index>=photo_count)return;
  wchar_t old[MAX_PATH],folder[MAX_PATH],name[MAX_PATH],target[MAX_PATH];
@@ -225,6 +232,32 @@ static void layout_children(int width,int height){
  MoveWindow(photo_list,SIDEBAR_W+18,TOP_H+TOOL_H+14,content-36,height-TOP_H-TOOL_H-88,TRUE);
  MoveWindow(status_text,SIDEBAR_W+24,height-32,content-48,20,TRUE);
 }
+static void apply_tag_to_selected(const wchar_t *tag){
+ int i=ListView_GetNextItem(photo_list,-1,LVNI_SELECTED);
+ if(i<0){set_status(L"Select one or more photos in the gallery first.");return;}
+ int count=0;
+ for(;i>=0;i=ListView_GetNextItem(photo_list,i,LVNI_SELECTED))
+  if(catalog_apply_tags(photo_paths[i],tag))count++;
+ refresh_catalog();
+ wchar_t message[128];swprintf(message,128,L"Applied %s to %d photo(s)",tag,count);set_status(message);
+}
+static void choose_month_tag(HWND owner){
+ static const wchar_t *months[]={L"January",L"February",L"March",L"April",L"May",L"June",L"July",L"August",L"September",L"October",L"November",L"December"};
+ HMENU menu=CreatePopupMenu();if(!menu)return;
+ for(int i=0;i<12;i++)AppendMenuW(menu,MF_STRING,ID_MONTH_FIRST+i,months[i]);
+ RECT rc;HWND b=GetDlgItem(owner,ID_MONTH_TAG);GetWindowRect(b,&rc);
+ int selected=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_LEFTALIGN|TPM_TOPALIGN,rc.left,rc.bottom,0,owner,NULL);
+ DestroyMenu(menu);
+ if(selected>=ID_MONTH_FIRST&&selected<ID_MONTH_FIRST+12){wchar_t tag[64];swprintf(tag,64,L"Month: %s",months[selected-ID_MONTH_FIRST]);apply_tag_to_selected(tag);}
+}
+static void enter_year_tag(HWND owner){
+ wchar_t year[16]=L"2026",tag[64];
+ if(!prompt_value(owner,L"Add year tag",L"Enter a four-digit year:",L"2026",year,16))return;
+ if(wcslen(year)!=4||year[0]<L'0'||year[0]>L'9'||year[1]<L'0'||year[1]>L'9'||year[2]<L'0'||year[2]>L'9'||year[3]<L'0'||year[3]>L'9'){
+  MessageBoxW(owner,L"Enter a valid four-digit year, such as 2026.",L"Year tag",MB_ICONWARNING);return;
+ }
+ swprintf(tag,64,L"Year: %s",year);apply_tag_to_selected(tag);
+}
 static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
  switch(msg){
  case WM_DRAWITEM:icons_draw_button((DRAWITEMSTRUCT*)lp);return TRUE;
@@ -256,6 +289,8 @@ static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   SendMessageW(tag_edit,WM_SETFONT,(WPARAM)font_ui,TRUE);
   make_button(w,L"Apply tags",ID_APPLY_TAGS,0,0,100,32);
   make_button(w,L"Open photo",ID_OPEN,0,0,100,32);
+  make_button(w,L"Month tag",ID_MONTH_TAG,0,0,104,32);
+  make_button(w,L"Year tag",ID_YEAR_TAG,0,0,96,32);
   photo_list=CreateWindowExW(0,WC_LISTVIEWW,L"",WS_CHILD|WS_VISIBLE|WS_BORDER|LVS_ICON|LVS_SHOWSELALWAYS|LVS_AUTOARRANGE,0,0,800,600,w,(HMENU)(INT_PTR)ID_LIST,app_instance,NULL);
   ListView_SetExtendedListViewStyle(photo_list,LVS_EX_DOUBLEBUFFER|LVS_EX_LABELTIP|LVS_EX_BORDERSELECT);ListView_SetBkColor(photo_list,bg_main);ListView_SetTextBkColor(photo_list,bg_main);ListView_SetTextColor(photo_list,fg_main);
   thumbnail_list=ImageList_Create(176,136,ILC_COLOR32|ILC_MASK,96,32);ListView_SetImageList(photo_list,thumbnail_list,LVSIL_NORMAL);
@@ -271,12 +306,14 @@ static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   MoveWindow(GetDlgItem(w,ID_NAVIGATE),width-92,TOP_H+5,70,32,TRUE);
   MoveWindow(tag_edit,SIDEBAR_W+22,TOP_H+48,260,32,TRUE);
   MoveWindow(GetDlgItem(w,ID_APPLY_TAGS),SIDEBAR_W+292,TOP_H+48,104,32,TRUE);
-  MoveWindow(GetDlgItem(w,ID_OPEN),SIDEBAR_W+406,TOP_H+48,112,32,TRUE);
+  MoveWindow(GetDlgItem(w,ID_OPEN),SIDEBAR_W+406,TOP_H+48,100,32,TRUE);
+  MoveWindow(GetDlgItem(w,ID_MONTH_TAG),SIDEBAR_W+516,TOP_H+48,104,32,TRUE);
+  MoveWindow(GetDlgItem(w,ID_YEAR_TAG),SIDEBAR_W+628,TOP_H+48,96,32,TRUE);
   MoveWindow(tag_list,18,438,242,height-460>100?height-460:100,TRUE);
   MoveWindow(GetDlgItem(w,ID_SHELL),20,height-52,238,36,TRUE);
   }return 0;
  case WM_COMMAND:
-  switch(LOWORD(wp)){case ID_ADD_FOLDER:browse_folder();break;case ID_ADD_FILES:add_files();break;case ID_REFRESH:refresh_catalog();break;case ID_NAVIGATE:navigate_address();break;case ID_APPLY_TAGS:apply_tags();break;case ID_OPEN:show_viewer();break;case ID_SHELL:install_shell_menu();break;case ID_SEARCH:if(HIWORD(wp)==EN_CHANGE){}break;case ID_SOURCE_LIST:if(HIWORD(wp)==LBN_SELCHANGE){active_tag[0]=0;SendMessageW(tag_list,LB_SETCURSEL,0,0);refresh_catalog();}break;case ID_TAG_LIST:if(HIWORD(wp)==LBN_SELCHANGE){int sel=(int)SendMessageW(tag_list,LB_GETCURSEL,0,0);if(sel<=0)active_tag[0]=0;else if(sel-1<tag_name_count)lstrcpynW(active_tag,tag_names[sel-1],256);refresh_catalog();}break;}return 0;
+  switch(LOWORD(wp)){case ID_ADD_FOLDER:browse_folder();break;case ID_ADD_FILES:add_files();break;case ID_REFRESH:refresh_catalog();break;case ID_NAVIGATE:navigate_address();break;case ID_APPLY_TAGS:apply_tags();break;case ID_OPEN:show_viewer();break;case ID_MONTH_TAG:choose_month_tag(w);break;case ID_YEAR_TAG:enter_year_tag(w);break;case ID_SHELL:install_shell_menu();break;case ID_SEARCH:if(HIWORD(wp)==EN_CHANGE){}break;case ID_SOURCE_LIST:if(HIWORD(wp)==LBN_SELCHANGE){active_tag[0]=0;SendMessageW(tag_list,LB_SETCURSEL,0,0);refresh_catalog();}break;case ID_TAG_LIST:if(HIWORD(wp)==LBN_SELCHANGE){int sel=(int)SendMessageW(tag_list,LB_GETCURSEL,0,0);if(sel<=0)active_tag[0]=0;else if(sel-1<tag_name_count)lstrcpynW(active_tag,tag_names[sel-1],256);refresh_catalog();}break;}return 0;
  case WM_KEYDOWN:if(wp==VK_RETURN&&GetFocus()==address_edit){navigate_address();return 0;}break;
  case WM_NOTIFY:
   if(((NMHDR*)lp)->idFrom==ID_LIST&&((NMHDR*)lp)->code==NM_DBLCLK)show_viewer();return 0;
