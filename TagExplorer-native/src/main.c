@@ -4,44 +4,77 @@
 #include <commdlg.h>
 #include <shlobj.h>
 #include <shlwapi.h>
+#include <uxtheme.h>
 #include <wchar.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include "resource.h"
 #include "catalog.h"
 #include "images.h"
+
 #define MAIN_CLASS L"TagExplorerNativeMain"
-#define PREVIEW_CLASS L"TagExplorerNativePreview"
+#define VIEWER_CLASS L"TagExplorerNativeViewer"
+#define SIDEBAR_W 278
+#define TOP_H 66
+#define TOOL_H 54
+#define ID_SOURCE_LIST 1101
+#define ID_ADD_FOLDER 1102
+#define ID_ADD_FILES 1103
+#define ID_SEARCH 1104
+#define ID_REFRESH 1105
+#define ID_TAG 1106
+#define ID_APPLY_TAGS 1107
+#define ID_OPEN 1108
+#define ID_SHELL 1109
+#define ID_LIST 1110
+#define ID_STATUS 1111
+#define ID_TAGS_HEADER 1112
+
 static HINSTANCE app_instance;
-static HWND main_window,path_edit,search_edit,tag_edit,photo_list,preview_window,status_text;
+static HWND main_window,sidebar,source_list,search_edit,tag_edit,photo_list,status_text;
+static HWND title_label,subtitle_label,brand_label,source_heading,tag_heading;
 static wchar_t **photo_paths,**photo_tags;
-static int photo_count,selected_index=-1;
+static int photo_count,viewer_index,viewer_rotation;
 static HIMAGELIST thumbnail_list;
-static int viewer_index,viewer_rotation;
-static void set_status(const wchar_t *s){SetWindowTextW(status_text,s);}
-static void free_results(void){if(photo_paths)catalog_free_results(photo_paths,photo_tags,photo_count);photo_paths=photo_tags=NULL;photo_count=0;selected_index=-1;}
+static HFONT font_ui,font_small,font_title;
+static COLORREF bg_main=RGB(31,31,33),bg_panel=RGB(43,43,46),bg_input=RGB(55,55,59);
+static COLORREF fg_main=RGB(238,238,240),fg_muted=RGB(151,153,158),accent=RGB(79,174,184);
+
+static void set_status(const wchar_t *s){if(status_text)SetWindowTextW(status_text,s);}
+static void free_results(void){if(photo_paths)catalog_free_results(photo_paths,photo_tags,photo_count);photo_paths=photo_tags=NULL;photo_count=0;}
+static HWND make_label(HWND parent,const wchar_t *text,int x,int y,int w,int h,HFONT font,COLORREF color){
+ HWND hnd=CreateWindowExW(0,L"STATIC",text,WS_CHILD|WS_VISIBLE|SS_LEFT,x,y,w,h,parent,NULL,app_instance,NULL);
+ SendMessageW(hnd,WM_SETFONT,(WPARAM)font,TRUE);SetPropW(hnd,L"TagExplorerTextColor",(HANDLE)(ULONG_PTR)(color+1));return hnd;
+}
+static HWND make_button(HWND parent,const wchar_t *text,int id,int x,int y,int w,int h){
+ HWND b=CreateWindowExW(0,L"BUTTON",text,WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,x,y,w,h,parent,(HMENU)(INT_PTR)id,app_instance,NULL);
+ SendMessageW(b,WM_SETFONT,(WPARAM)font_ui,TRUE);SetWindowTheme(b,L"Explorer",NULL);return b;
+}
 static void refresh_catalog(void){
  free_results();ListView_DeleteAllItems(photo_list);ImageList_RemoveAll(thumbnail_list);
  wchar_t query[512];GetWindowTextW(search_edit,query,512);
- if(!catalog_search(query,&photo_paths,&photo_tags,&photo_count)){set_status(L"Catalog search failed.");return;}
+ if(!catalog_search(query,&photo_paths,&photo_tags,&photo_count)){set_status(L"Unable to read the photo catalog.");return;}
  for(int i=0;i<photo_count;i++){
-  LVITEMW item={0};item.mask=LVIF_TEXT|LVIF_IMAGE;item.iItem=i;item.pszText=PathFindFileNameW(photo_paths[i]);
-  HBITMAP bitmap=image_thumbnail(photo_paths[i],88);HICON icon=NULL;
+  wchar_t caption[MAX_PATH+160];const wchar_t *name=PathFindFileNameW(photo_paths[i]);
+  if(photo_tags[i]&&photo_tags[i][0])swprintf(caption,MAX_PATH+160,L"%s\n%s",name,photo_tags[i]);
+  else lstrcpynW(caption,name,MAX_PATH+160);
+  HBITMAP bitmap=image_thumbnail(photo_paths[i],300);HICON icon=NULL;
   if(bitmap){ICONINFO info={0};info.fIcon=TRUE;info.hbmColor=bitmap;info.hbmMask=bitmap;icon=CreateIconIndirect(&info);DeleteObject(bitmap);}
-  item.iImage=icon?ImageList_AddIcon(thumbnail_list,icon):-1;if(icon)DestroyIcon(icon);ListView_InsertItem(photo_list,&item);
+  int image=icon?ImageList_AddIcon(thumbnail_list,icon):-1;if(icon)DestroyIcon(icon);
+  LVITEMW item={0};item.mask=LVIF_TEXT|LVIF_IMAGE;item.iItem=i;item.pszText=caption;item.iImage=image;
+  ListView_InsertItem(photo_list,&item);
  }
- wchar_t message[128];swprintf(message,128,L"%d image(s) in the catalog.",photo_count);set_status(message);
- InvalidateRect(preview_window,NULL,TRUE);
+ wchar_t message[160];swprintf(message,160,L"%d photos",photo_count);set_status(message);
 }
 static void browse_folder(void){
- BROWSEINFOW bi={0};bi.hwndOwner=main_window;bi.lpszTitle=L"Choose a folder containing photos";bi.ulFlags=BIF_RETURNONLYFSDIRS|BIF_NEWDIALOGSTYLE;
+ BROWSEINFOW bi={0};bi.hwndOwner=main_window;bi.lpszTitle=L"Choose a folder to add to your photo library";bi.ulFlags=BIF_RETURNONLYFSDIRS|BIF_NEWDIALOGSTYLE;
  PIDLIST_ABSOLUTE id=SHBrowseForFolderW(&bi);if(!id)return;wchar_t folder[MAX_PATH];
- if(SHGetPathFromIDListW(id,folder)){SetWindowTextW(path_edit,folder);int n=catalog_add_tree(folder);wchar_t m[128];swprintf(m,128,L"Indexed %d image(s) from folder.",n);set_status(m);refresh_catalog();}
+ if(SHGetPathFromIDListW(id,folder)){int n=catalog_add_tree(folder);wchar_t m[160];swprintf(m,160,L"Added %d photos from %s",n,folder);set_status(m);refresh_catalog();}
  CoTaskMemFree(id);
 }
 static void add_files(void){
  wchar_t buffer[32768]=L"";OPENFILENAMEW ofn={0};ofn.lStructSize=sizeof(ofn);ofn.hwndOwner=main_window;
- ofn.lpstrFilter=L"Image files\0*.jpg;*.jpeg;*.png;*.bmp;*.gif;*.tif;*.tiff;*.ico;*.wdp;*.heic;*.webp\0All files\0*.*\0";
+ ofn.lpstrFilter=L"Images\0*.jpg;*.jpeg;*.png;*.bmp;*.gif;*.tif;*.tiff;*.ico;*.wdp;*.heic;*.webp\0All files\0*.*\0";
  ofn.lpstrFile=buffer;ofn.nMaxFile=32768;ofn.Flags=OFN_EXPLORER|OFN_ALLOWMULTISELECT|OFN_FILEMUSTEXIST;
  if(!GetOpenFileNameW(&ofn))return;
  if(buffer[wcslen(buffer)+1]==0)catalog_add(buffer);
@@ -50,18 +83,26 @@ static void add_files(void){
  refresh_catalog();
 }
 static void apply_tags(void){
- int i=ListView_GetNextItem(photo_list,-1,LVNI_SELECTED);if(i<0){set_status(L"Select one or more photos first.");return;}
- wchar_t tags[512];GetWindowTextW(tag_edit,tags,512);if(!tags[0]){set_status(L"Enter one or more comma-separated tags.");return;}
- int applied=0;for(;i>=0;i=ListView_GetNextItem(photo_list,i,LVNI_SELECTED)){catalog_apply_tags(photo_paths[i],tags);applied++;}
- SetWindowTextW(tag_edit,L"");refresh_catalog();wchar_t message[128];swprintf(message,128,L"Tags saved for %d photo(s).",applied);set_status(message);
+ int i=ListView_GetNextItem(photo_list,-1,LVNI_SELECTED);if(i<0){set_status(L"Select photos in the gallery first.");return;}
+ wchar_t tags[512];GetWindowTextW(tag_edit,tags,512);if(!tags[0]){set_status(L"Type tags separated by commas.");return;}
+ int count=0;for(;i>=0;i=ListView_GetNextItem(photo_list,i,LVNI_SELECTED)){catalog_apply_tags(photo_paths[i],tags);count++;}
+ SetWindowTextW(tag_edit,L"");refresh_catalog();wchar_t m[96];swprintf(m,96,L"Updated tags on %d photo(s)",count);set_status(m);
 }
-static LRESULT CALLBACK preview_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
- if(msg==WM_PAINT){PAINTSTRUCT ps;HDC dc=BeginPaint(w,&ps);RECT rc;GetClientRect(w,&rc);FillRect(dc,&rc,(HBRUSH)GetStockObject(BLACK_BRUSH));if(selected_index>=0&&selected_index<photo_count)image_draw(dc,&rc,photo_paths[selected_index],0);EndPaint(w,&ps);return 0;}
- return DefWindowProcW(w,msg,wp,lp);
+static void install_shell_menu(void){
+ const wchar_t *exts[]={L".jpg",L".jpeg",L".png",L".bmp",L".gif",L".tif",L".tiff",L".webp",L".heic"};
+ wchar_t exe[MAX_PATH],keypath[320],command[MAX_PATH*2];GetModuleFileNameW(NULL,exe,MAX_PATH);
+ for(int i=0;i<9;i++){wsprintfW(keypath,L"Software\\Classes\\SystemFileAssociations\\%s\\shell\\TagExplorer\\command",exts[i]);HKEY key;
+  if(RegCreateKeyExW(HKEY_CURRENT_USER,keypath,0,NULL,0,KEY_SET_VALUE,NULL,&key,NULL)==ERROR_SUCCESS){
+   wsprintfW(command,L"\"%s\" --quick-tag \"%%1\"",exe);RegSetValueExW(key,NULL,0,REG_SZ,(const BYTE*)command,(DWORD)((wcslen(command)+1)*sizeof(wchar_t)));RegCloseKey(key);
+  }}
+ set_status(L"Tag Explorer was added to the File Explorer right-click menu.");
+}
+static void open_viewer(int index){
+ if(index<0||index>=photo_count)return;viewer_index=index;viewer_rotation=0;
+ WNDCLASSW wc={0};wc.lpfnWndProc=NULL;wc.hInstance=app_instance;wc.lpszClassName=VIEWER_CLASS;
 }
 static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
  switch(msg){
- case WM_CREATE:viewer_index=(int)(INT_PTR)((CREATESTRUCTW*)lp)->lpCreateParams;viewer_rotation=0;return 0;
  case WM_KEYDOWN:
   if(wp==VK_ESCAPE){DestroyWindow(w);return 0;}
   if(wp==VK_RIGHT&&photo_count){viewer_index=(viewer_index+1)%photo_count;viewer_rotation=0;SetWindowTextW(w,PathFindFileNameW(photo_paths[viewer_index]));InvalidateRect(w,NULL,TRUE);}
@@ -72,44 +113,76 @@ static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
 }
 static void show_viewer(void){
  int i=ListView_GetNextItem(photo_list,-1,LVNI_SELECTED);if(i<0)return;
- WNDCLASSW wc={0};wc.lpfnWndProc=viewer_proc;wc.hInstance=app_instance;wc.lpszClassName=L"TagExplorerNativeViewer";wc.hCursor=LoadCursorW(NULL,IDC_ARROW);wc.hbrBackground=(HBRUSH)GetStockObject(BLACK_BRUSH);RegisterClassW(&wc);
- HWND v=CreateWindowExW(WS_EX_APPWINDOW,wc.lpszClassName,PathFindFileNameW(photo_paths[i]),WS_OVERLAPPEDWINDOW|WS_VISIBLE,CW_USEDEFAULT,CW_USEDEFAULT,1100,760,main_window,NULL,app_instance,(LPVOID)(INT_PTR)i);
- ShowWindow(v,SW_MAXIMIZE);SetFocus(v);
+ WNDCLASSW wc={0};wc.lpfnWndProc=viewer_proc;wc.hInstance=app_instance;wc.lpszClassName=VIEWER_CLASS;wc.hCursor=LoadCursorW(NULL,IDC_ARROW);wc.hbrBackground=(HBRUSH)GetStockObject(BLACK_BRUSH);RegisterClassW(&wc);
+ HWND v=CreateWindowExW(WS_EX_APPWINDOW,VIEWER_CLASS,PathFindFileNameW(photo_paths[i]),WS_OVERLAPPEDWINDOW|WS_VISIBLE,CW_USEDEFAULT,CW_USEDEFAULT,1100,760,main_window,NULL,app_instance,NULL);
+ viewer_index=i;viewer_rotation=0;ShowWindow(v,SW_MAXIMIZE);SetFocus(v);
+}
+static void layout_children(int width,int height){
+ int content=width-SIDEBAR_W;if(content<360)content=360;
+ MoveWindow(sidebar,0,0,SIDEBAR_W,height,TRUE);
+ MoveWindow(title_label,SIDEBAR_W+28,15,420,28,TRUE);
+ MoveWindow(subtitle_label,SIDEBAR_W+29,42,450,18,TRUE);
+ MoveWindow(search_edit,width-390,18,250,32,TRUE);
+ MoveWindow(photo_list,SIDEBAR_W+18,TOP_H+TOOL_H+14,content-36,height-TOP_H-TOOL_H-88,TRUE);
+ MoveWindow(status_text,SIDEBAR_W+24,height-32,content-48,20,TRUE);
 }
 static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
  switch(msg){
  case WM_CREATE:{
-  main_window=w;HFONT font=(HFONT)GetStockObject(DEFAULT_GUI_FONT);
-  path_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL,10,10,550,26,w,(HMENU)(INT_PTR)IDC_PATH,app_instance,NULL);
-  CreateWindowW(L"BUTTON",L"Folder",WS_CHILD|WS_VISIBLE|WS_TABSTOP,568,10,76,26,w,(HMENU)(INT_PTR)IDC_FOLDER,app_instance,NULL);
-  CreateWindowW(L"BUTTON",L"Add files",WS_CHILD|WS_VISIBLE|WS_TABSTOP,650,10,82,26,w,(HMENU)(INT_PTR)IDC_ADD,app_instance,NULL);
-  search_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL,10,44,360,26,w,(HMENU)(INT_PTR)IDC_SEARCH,app_instance,NULL);
-  CreateWindowW(L"BUTTON",L"Search",WS_CHILD|WS_VISIBLE|WS_TABSTOP,378,44,72,26,w,(HMENU)(INT_PTR)IDC_REFRESH,app_instance,NULL);
-  tag_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL,460,44,260,26,w,(HMENU)(INT_PTR)IDC_TAG,app_instance,NULL);
-  CreateWindowW(L"BUTTON",L"Apply tags",WS_CHILD|WS_VISIBLE|WS_TABSTOP,728,44,90,26,w,(HMENU)(INT_PTR)(IDC_TAG+100),app_instance,NULL);
-  CreateWindowW(L"BUTTON",L"View",WS_CHILD|WS_VISIBLE|WS_TABSTOP,826,44,70,26,w,(HMENU)(INT_PTR)IDC_OPEN,app_instance,NULL);
-  photo_list=CreateWindowW(WC_LISTVIEWW,L"",WS_CHILD|WS_VISIBLE|WS_BORDER|LVS_ICON|LVS_SHOWSELALWAYS,10,80,680,540,w,(HMENU)(INT_PTR)IDC_LIST,app_instance,NULL);
-  ListView_SetExtendedListViewStyle(photo_list,LVS_EX_DOUBLEBUFFER|LVS_EX_LABELTIP);
-  thumbnail_list=ImageList_Create(96,96,ILC_COLOR32|ILC_MASK,64,64);ListView_SetImageList(photo_list,thumbnail_list,LVSIL_NORMAL);
-  WNDCLASSW pc={0};pc.lpfnWndProc=preview_proc;pc.hInstance=app_instance;pc.lpszClassName=PREVIEW_CLASS;pc.hbrBackground=(HBRUSH)GetStockObject(BLACK_BRUSH);RegisterClassW(&pc);
-  preview_window=CreateWindowW(PREVIEW_CLASS,L"",WS_CHILD|WS_VISIBLE|WS_BORDER,700,80,380,540,w,(HMENU)(INT_PTR)IDC_PREVIEW,app_instance,NULL);
-  status_text=CreateWindowW(L"STATIC",L"Ready",WS_CHILD|WS_VISIBLE,10,630,1000,24,w,(HMENU)(INT_PTR)IDC_STATUS,app_instance,NULL);
-  HWND controls[]={path_edit,search_edit,tag_edit,photo_list,status_text};for(int k=0;k<5;k++)SendMessageW(controls[k],WM_SETFONT,(WPARAM)font,TRUE);
-  if(!catalog_open())MessageBoxW(w,L"Could not open the photo catalog.",L"Tag Explorer",MB_ICONERROR);
+  main_window=w;font_ui=CreateFontW(-14,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Segoe UI");
+  font_small=CreateFontW(-12,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Segoe UI");
+  font_title=CreateFontW(-23,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Segoe UI");
+  sidebar=CreateWindowExW(0,L"STATIC",L"",WS_CHILD|WS_VISIBLE|SS_BLACKRECT,0,0,SIDEBAR_W,700,w,NULL,app_instance,NULL);
+  brand_label=make_label(sidebar,L"◉  TAG EXPLORER",24,22,225,34,font_title,fg_main);
+  source_heading=make_label(sidebar,L"LIBRARY",24,92,220,20,font_small,fg_muted);
+  make_button(sidebar,L"+  Add folder",ID_ADD_FOLDER,20,122,238,38);
+  make_button(sidebar,L"+  Add photos",ID_ADD_FILES,20,168,238,38);
+  make_label(sidebar,L"SOURCES",24,232,220,20,font_small,fg_muted);
+  source_list=CreateWindowExW(0,L"LISTBOX",L"",WS_CHILD|WS_VISIBLE|LBS_NOTIFY|LBS_NOINTEGRALHEIGHT|WS_VSCROLL,18,260,242,126,sidebar,(HMENU)(INT_PTR)ID_SOURCE_LIST,app_instance,NULL);
+  SendMessageW(source_list,WM_SETFONT,(WPARAM)font_ui,TRUE);SendMessageW(source_list,LB_ADDSTRING,0,(LPARAM)L"  All photos");
+  make_label(sidebar,L"ORGANIZE",24,414,220,20,font_small,fg_muted);
+  make_label(sidebar,L"Tags are stored locally in your catalog.",24,446,230,40,font_small,fg_muted);
+  make_button(sidebar,L"Install Explorer menu",ID_SHELL,20,510,238,36);
+  title_label=make_label(w,L"Photo library",SIDEBAR_W+28,15,420,28,font_title,fg_main);
+  subtitle_label=make_label(w,L"Browse, search and organize your collection",SIDEBAR_W+29,42,450,18,font_small,fg_muted);
+  search_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL,0,0,250,32,w,(HMENU)(INT_PTR)ID_SEARCH,app_instance,NULL);
+  SendMessageW(search_edit,WM_SETFONT,(WPARAM)font_ui,TRUE);
+  make_button(w,L"Search",ID_REFRESH,0,0,74,32);
+  tag_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL,0,0,250,32,w,(HMENU)(INT_PTR)ID_TAG,app_instance,NULL);
+  SendMessageW(tag_edit,WM_SETFONT,(WPARAM)font_ui,TRUE);
+  make_button(w,L"Apply tags",ID_APPLY_TAGS,0,0,100,32);
+  make_button(w,L"Open photo",ID_OPEN,0,0,100,32);
+  photo_list=CreateWindowExW(0,WC_LISTVIEWW,L"",WS_CHILD|WS_VISIBLE|WS_BORDER|LVS_ICON|LVS_SHOWSELALWAYS|LVS_AUTOARRANGE,0,0,800,600,w,(HMENU)(INT_PTR)ID_LIST,app_instance,NULL);
+  ListView_SetExtendedListViewStyle(photo_list,LVS_EX_DOUBLEBUFFER|LVS_EX_LABELTIP|LVS_EX_BORDERSELECT);
+  thumbnail_list=ImageList_Create(176,136,ILC_COLOR32|ILC_MASK,96,32);ListView_SetImageList(photo_list,thumbnail_list,LVSIL_NORMAL);
+  status_text=make_label(w,L"Ready",0,0,500,20,font_small,fg_muted);
+  if(!catalog_open())MessageBoxW(w,L"Could not open the local photo catalog.",L"Tag Explorer",MB_ICONERROR);
   refresh_catalog();return 0;
  }
- case WM_SIZE:{int width=LOWORD(lp),height=HIWORD(lp);MoveWindow(path_edit,10,10,width-500,26,TRUE);MoveWindow(search_edit,10,44,width/3,26,TRUE);MoveWindow(tag_edit,width/3+120,44,width/3,26,TRUE);MoveWindow(photo_list,10,80,width*2/3-20,height-120,TRUE);MoveWindow(preview_window,width*2/3,80,width/3-20,height-120,TRUE);MoveWindow(status_text,10,height-30,width-20,22,TRUE);return 0;}
+ case WM_SIZE:layout_children(LOWORD(lp),HIWORD(lp));{
+  int width=LOWORD(lp);int content=width-SIDEBAR_W;
+  MoveWindow(search_edit,width-360,17,230,32,TRUE);
+  MoveWindow(GetDlgItem(w,ID_REFRESH),width-120,17,82,32,TRUE);
+  MoveWindow(tag_edit,SIDEBAR_W+22,TOP_H+10,260,32,TRUE);
+  MoveWindow(GetDlgItem(w,ID_APPLY_TAGS),SIDEBAR_W+292,TOP_H+10,104,32,TRUE);
+  MoveWindow(GetDlgItem(w,ID_OPEN),SIDEBAR_W+406,TOP_H+10,112,32,TRUE);
+  (void)content;
+  }return 0;
  case WM_COMMAND:
-  switch(LOWORD(wp)){case IDC_FOLDER:browse_folder();break;case IDC_ADD:add_files();break;case IDC_REFRESH:refresh_catalog();break;case IDC_TAG+100:apply_tags();break;case IDC_OPEN:show_viewer();break;}return 0;
+  switch(LOWORD(wp)){case ID_ADD_FOLDER:browse_folder();break;case ID_ADD_FILES:add_files();break;case ID_REFRESH:refresh_catalog();break;case ID_APPLY_TAGS:apply_tags();break;case ID_OPEN:show_viewer();break;case ID_SHELL:install_shell_menu();break;case ID_SEARCH:if(HIWORD(wp)==EN_CHANGE){}break;case ID_SOURCE_LIST:if(HIWORD(wp)==LBN_SELCHANGE)refresh_catalog();break;}return 0;
  case WM_NOTIFY:
-  if(((NMHDR*)lp)->idFrom==IDC_LIST){NMHDR *h=(NMHDR*)lp;if(h->code==NM_DBLCLK)show_viewer();if(h->code==LVN_ITEMCHANGED){NMLISTVIEW *n=(NMLISTVIEW*)lp;if(n->uNewState&LVIS_SELECTED){selected_index=n->iItem;InvalidateRect(preview_window,NULL,TRUE);}}}return 0;
- case WM_DESTROY:free_results();if(thumbnail_list)ImageList_Destroy(thumbnail_list);catalog_close();PostQuitMessage(0);return 0;
+  if(((NMHDR*)lp)->idFrom==ID_LIST&&((NMHDR*)lp)->code==NM_DBLCLK)show_viewer();return 0;
+ case WM_CTLCOLORSTATIC:{HDC dc=(HDC)wp;HWND ctl=(HWND)lp;SetBkMode(dc,TRANSPARENT);HANDLE c=GetPropW(ctl,L"TagExplorerTextColor");SetTextColor(dc,c?(COLORREF)((ULONG_PTR)c-1):fg_main);return (LRESULT)GetStockObject(NULL_BRUSH);}
+ case WM_CTLCOLOREDIT:{HDC dc=(HDC)wp;SetTextColor(dc,fg_main);SetBkColor(dc,bg_input);return (LRESULT)GetStockObject(DKGRAY_BRUSH);}
+ case WM_CTLCOLORLISTBOX:{HDC dc=(HDC)wp;SetTextColor(dc,fg_main);SetBkColor(dc,bg_panel);return (LRESULT)GetStockObject(DKGRAY_BRUSH);}
+ case WM_ERASEBKGND:{RECT rc;GetClientRect(w,&rc);FillRect((HDC)wp,&rc,(HBRUSH)GetStockObject(BLACK_BRUSH));RECT side={0,0,SIDEBAR_W,rc.bottom};HBRUSH b=CreateSolidBrush(bg_panel);FillRect((HDC)wp,&side,b);DeleteObject(b);return 1;}
+ case WM_DESTROY:free_results();if(thumbnail_list)ImageList_Destroy(thumbnail_list);catalog_close();if(font_ui)DeleteObject(font_ui);if(font_small)DeleteObject(font_small);if(font_title)DeleteObject(font_title);PostQuitMessage(0);return 0;
  }return DefWindowProcW(w,msg,wp,lp);
 }
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR command_line,int show){
- (void)previous;(void)command_line;app_instance=instance;HRESULT com=CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);(void)com;
+ (void)previous;(void)command_line;app_instance=instance;CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);
  INITCOMMONCONTROLSEX cc={sizeof(cc),ICC_LISTVIEW_CLASSES};InitCommonControlsEx(&cc);
- WNDCLASSW wc={0};wc.lpfnWndProc=main_proc;wc.hInstance=instance;wc.lpszClassName=MAIN_CLASS;wc.hCursor=LoadCursorW(NULL,IDC_ARROW);wc.hbrBackground=(HBRUSH)(COLOR_WINDOW+1);RegisterClassW(&wc);
- HWND w=CreateWindowExW(0,MAIN_CLASS,L"Tag Explorer — Native C",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1120,740,NULL,NULL,instance,NULL);
+ WNDCLASSW wc={0};wc.lpfnWndProc=main_proc;wc.hInstance=instance;wc.lpszClassName=MAIN_CLASS;wc.hCursor=LoadCursorW(NULL,IDC_ARROW);wc.hbrBackground=(HBRUSH)GetStockObject(BLACK_BRUSH);RegisterClassW(&wc);
+ HWND w=CreateWindowExW(0,MAIN_CLASS,L"Tag Explorer",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1450,920,NULL,NULL,instance,NULL);
  ShowWindow(w,show);UpdateWindow(w);MSG m;while(GetMessageW(&m,NULL,0,0)>0){TranslateMessage(&m);DispatchMessageW(&m);}CoUninitialize();return (int)m.wParam;
 }
