@@ -50,9 +50,10 @@ static void add_files(void){
  refresh_catalog();
 }
 static void apply_tags(void){
- int i=ListView_GetNextItem(photo_list,-1,LVNI_SELECTED);if(i<0){set_status(L"Select a photo first.");return;}
+ int i=ListView_GetNextItem(photo_list,-1,LVNI_SELECTED);if(i<0){set_status(L"Select one or more photos first.");return;}
  wchar_t tags[512];GetWindowTextW(tag_edit,tags,512);if(!tags[0]){set_status(L"Enter one or more comma-separated tags.");return;}
- catalog_apply_tags(photo_paths[i],tags);SetWindowTextW(tag_edit,L"");refresh_catalog();set_status(L"Tags saved.");
+ int applied=0;for(;i>=0;i=ListView_GetNextItem(photo_list,i,LVNI_SELECTED)){catalog_apply_tags(photo_paths[i],tags);applied++;}
+ SetWindowTextW(tag_edit,L"");refresh_catalog();wchar_t message[128];swprintf(message,128,L"Tags saved for %d photo(s).",applied);set_status(message);
 }
 static LRESULT CALLBACK preview_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
  if(msg==WM_PAINT){PAINTSTRUCT ps;HDC dc=BeginPaint(w,&ps);RECT rc;GetClientRect(w,&rc);FillRect(dc,&rc,(HBRUSH)GetStockObject(BLACK_BRUSH));if(selected_index>=0&&selected_index<photo_count)image_draw(dc,&rc,photo_paths[selected_index],0);EndPaint(w,&ps);return 0;}
@@ -84,7 +85,7 @@ static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   CreateWindowW(L"BUTTON",L"Add files",WS_CHILD|WS_VISIBLE|WS_TABSTOP,650,10,82,26,w,(HMENU)(INT_PTR)IDC_ADD,app_instance,NULL);
   search_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL,10,44,360,26,w,(HMENU)(INT_PTR)IDC_SEARCH,app_instance,NULL);
   CreateWindowW(L"BUTTON",L"Search",WS_CHILD|WS_VISIBLE|WS_TABSTOP,378,44,72,26,w,(HMENU)(INT_PTR)IDC_REFRESH,app_instance,NULL);
-  tag_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL,460,44,260,26,w,(HMENU)IDC_TAG,app_instance,NULL);
+  tag_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL,460,44,260,26,w,(HMENU)(INT_PTR)IDC_TAG,app_instance,NULL);
   CreateWindowW(L"BUTTON",L"Apply tags",WS_CHILD|WS_VISIBLE|WS_TABSTOP,728,44,90,26,w,(HMENU)(INT_PTR)(IDC_TAG+100),app_instance,NULL);
   CreateWindowW(L"BUTTON",L"View",WS_CHILD|WS_VISIBLE|WS_TABSTOP,826,44,70,26,w,(HMENU)(INT_PTR)IDC_OPEN,app_instance,NULL);
   photo_list=CreateWindowW(WC_LISTVIEWW,L"",WS_CHILD|WS_VISIBLE|WS_BORDER|LVS_ICON|LVS_SHOWSELALWAYS,10,80,680,540,w,(HMENU)(INT_PTR)IDC_LIST,app_instance,NULL);
