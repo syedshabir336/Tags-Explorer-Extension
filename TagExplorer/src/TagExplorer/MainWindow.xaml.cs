@@ -140,8 +140,7 @@ public partial class MainWindow : Window
     {
         if (!File.Exists(path)) return;
         _database.RegisterImages(new[] { path });
-        var tags = Prompt($"Add comma-separated tags to:
-{System.IO.Path.GetFileName(path)}", "Quick tag");
+        var tags = Prompt($"Add comma-separated tags to:\n{System.IO.Path.GetFileName(path)}", "Quick tag");
         if (!string.IsNullOrWhiteSpace(tags))
             _database.ApplyTags(new[] { path }, tags.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
     }
