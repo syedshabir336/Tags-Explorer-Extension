@@ -65,6 +65,7 @@ static void refresh_tag_list(void){
  if(tag_names){for(int i=0;i<tag_name_count;i++)free(tag_names[i]);free(tag_names);tag_names=NULL;tag_name_count=0;}
  SendMessageW(tag_list,LB_RESETCONTENT,0,0);SendMessageW(tag_list,LB_ADDSTRING,0,(LPARAM)L"All tags");
  if(catalog_list_tags(&tag_names,&tag_name_count)){for(int i=0;i<tag_name_count;i++)SendMessageW(tag_list,LB_ADDSTRING,0,(LPARAM)tag_names[i]);}
+ int selected=0;if(active_tag[0])for(int i=0;i<tag_name_count;i++)if(!_wcsicmp(active_tag,tag_names[i])){selected=i+1;break;}SendMessageW(tag_list,LB_SETCURSEL,selected,0);
 }
 static void refresh_catalog(void){
  free_results();ListView_DeleteAllItems(photo_list);ImageList_RemoveAll(thumbnail_list);
@@ -211,7 +212,7 @@ static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   SendMessageW(search_edit,WM_SETFONT,(WPARAM)font_ui,TRUE);
   make_button(w,L"Search",ID_REFRESH,0,0,74,32);
   address_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL,0,0,600,32,w,(HMENU)(INT_PTR)ID_ADDRESS,app_instance,NULL);
-  SendMessageW(address_edit,WM_SETFONT,(WPARAM)font_ui,TRUE);
+  SendMessageW(address_edit,WM_SETFONT,(WPARAM)font_ui,TRUE);SendMessageW(address_edit,EM_SETCUEBANNER,TRUE,(LPARAM)L"Enter a folder or image path, then press Go");
   make_button(w,L"Go",ID_NAVIGATE,0,0,64,32);
   tag_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL,0,0,250,32,w,(HMENU)(INT_PTR)ID_TAG,app_instance,NULL);
   SendMessageW(tag_edit,WM_SETFONT,(WPARAM)font_ui,TRUE);
