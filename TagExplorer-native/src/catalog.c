@@ -14,12 +14,43 @@ int catalog_open(void){
  PathAppendW(dir,L"TagExplorer");CreateDirectoryW(dir,NULL);lstrcpynW(file,dir,MAX_PATH);PathAppendW(file,L"catalog.db");
  char *p=to_utf8(file);if(!p)return 0;int rc=sqlite3_open_v2(p,&db,SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE|SQLITE_OPEN_FULLMUTEX,NULL);free(p);if(rc!=SQLITE_OK)return 0;
  sqlite3_busy_timeout(db,3000);
- return sql("PRAGMA journal_mode=WAL;PRAGMA foreign_keys=ON;"
+ if(!sql("PRAGMA journal_mode=WAL;PRAGMA foreign_keys=ON;"
  "CREATE TABLE IF NOT EXISTS Images(Path TEXT PRIMARY KEY COLLATE NOCASE);"
  "CREATE TABLE IF NOT EXISTS Tags(Id INTEGER PRIMARY KEY,Name TEXT NOT NULL COLLATE NOCASE UNIQUE,Color TEXT NOT NULL DEFAULT '#5B8DEF');"
  "CREATE TABLE IF NOT EXISTS PhotoTags(PhotoPath TEXT NOT NULL COLLATE NOCASE,TagId INTEGER NOT NULL REFERENCES Tags(Id) ON DELETE CASCADE,PRIMARY KEY(PhotoPath,TagId));"
  "CREATE INDEX IF NOT EXISTS IX_PhotoTags_TagId ON PhotoTags(TagId);"
- "INSERT OR IGNORE INTO Images(Path) SELECT DISTINCT PhotoPath FROM PhotoTags;");
+ "INSERT OR IGNORE INTO Images(Path) SELECT DISTINCT PhotoPath FROM PhotoTags;"))return 0;
+ if(!sql("BEGIN IMMEDIATE;"
+ "INSERT OR IGNORE INTO Tags(Name) "
+ "SELECT DISTINCT 'Month: ' || substr(y.Name,7,4) || '-' || "
+ "CASE lower(substr(m.Name,8)) "
+ "WHEN 'january' THEN '01' WHEN 'february' THEN '02' WHEN 'march' THEN '03' "
+ "WHEN 'april' THEN '04' WHEN 'may' THEN '05' WHEN 'june' THEN '06' "
+ "WHEN 'july' THEN '07' WHEN 'august' THEN '08' WHEN 'september' THEN '09' "
+ "WHEN 'october' THEN '10' WHEN 'november' THEN '11' WHEN 'december' THEN '12' END "
+ "FROM PhotoTags pm JOIN Tags m ON m.Id=pm.TagId "
+ "JOIN PhotoTags py ON py.PhotoPath=pm.PhotoPath JOIN Tags y ON y.Id=py.TagId "
+ "WHERE m.Name IN ('Month: January','Month: February','Month: March','Month: April','Month: May','Month: June','Month: July','Month: August','Month: September','Month: October','Month: November','Month: December') "
+ "AND y.Name GLOB 'Year: [0-9][0-9][0-9][0-9]';"
+ "INSERT OR IGNORE INTO PhotoTags(PhotoPath,TagId) "
+ "SELECT pm.PhotoPath,nt.Id FROM PhotoTags pm JOIN Tags m ON m.Id=pm.TagId "
+ "JOIN PhotoTags py ON py.PhotoPath=pm.PhotoPath JOIN Tags y ON y.Id=py.TagId "
+ "JOIN Tags nt ON nt.Name='Month: ' || substr(y.Name,7,4) || '-' || "
+ "CASE lower(substr(m.Name,8)) "
+ "WHEN 'january' THEN '01' WHEN 'february' THEN '02' WHEN 'march' THEN '03' "
+ "WHEN 'april' THEN '04' WHEN 'may' THEN '05' WHEN 'june' THEN '06' "
+ "WHEN 'july' THEN '07' WHEN 'august' THEN '08' WHEN 'september' THEN '09' "
+ "WHEN 'october' THEN '10' WHEN 'november' THEN '11' WHEN 'december' THEN '12' END "
+ "WHERE m.Name IN ('Month: January','Month: February','Month: March','Month: April','Month: May','Month: June','Month: July','Month: August','Month: September','Month: October','Month: November','Month: December') "
+ "AND y.Name GLOB 'Year: [0-9][0-9][0-9][0-9]';"
+ "DELETE FROM PhotoTags WHERE TagId IN (SELECT Id FROM Tags WHERE Name IN "
+ "('Month: January','Month: February','Month: March','Month: April','Month: May','Month: June','Month: July','Month: August','Month: September','Month: October','Month: November','Month: December')) "
+ "AND EXISTS(SELECT 1 FROM PhotoTags py JOIN Tags y ON y.Id=py.TagId "
+ "WHERE py.PhotoPath=PhotoTags.PhotoPath AND y.Name GLOB 'Year: [0-9][0-9][0-9][0-9]');"
+ "DELETE FROM Tags WHERE Name IN ('Month: January','Month: February','Month: March','Month: April','Month: May','Month: June','Month: July','Month: August','Month: September','Month: October','Month: November','Month: December') "
+ "AND NOT EXISTS(SELECT 1 FROM PhotoTags WHERE TagId=Tags.Id);"
+ "COMMIT;")){sql("ROLLBACK");return 0;}
+ return 1;
 }
 void catalog_close(void){if(db){sqlite3_close(db);db=NULL;}}
 int catalog_add(const wchar_t *path){
