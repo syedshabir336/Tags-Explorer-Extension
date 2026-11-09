@@ -25,11 +25,33 @@ HBITMAP image_thumbnail(const wchar_t *path,UINT edge){
  void *bits=NULL;HBITMAP bmp=CreateDIBSection(NULL,&bi,DIB_RGB_COLORS,&bits,NULL,0);if(bmp&&bits)IWICBitmapSource_CopyPixels(src,NULL,w*4,w*h*4,(BYTE*)bits);IWICBitmapSource_Release(src);return bmp;
 }
 HRESULT image_draw(HDC dc,const RECT *area,const wchar_t *path,int rotation){
- HBITMAP bmp=image_thumbnail(path,2400);if(!bmp)return E_FAIL;BITMAP b={0};GetObjectW(bmp,sizeof(b),&b);
- int boxw=area->right-area->left,boxh=area->bottom-area->top;double a=(double)boxw/b.bmWidth,c=(double)boxh/b.bmHeight,scale=a<c?a:c;
- int dw=(int)(b.bmWidth*scale),dh=(int)(b.bmHeight*scale);int x=area->left+(boxw-dw)/2,y=area->top+(boxh-dh)/2;
- HDC mem=CreateCompatibleDC(dc);HGDIOBJ old=SelectObject(mem,bmp);SetStretchBltMode(dc,HALFTONE);
- if(rotation%180==0)StretchBlt(dc,x,y,dw,dh,mem,0,0,b.bmWidth,b.bmHeight,SRCCOPY);
- else {int rw=dh,rh=dw;XFORM xf={0};double rad=rotation*3.141592653589793/180.0;xf.eM11=(FLOAT)cos(rad);xf.eM12=(FLOAT)sin(rad);xf.eM21=(FLOAT)-sin(rad);xf.eM22=(FLOAT)cos(rad);xf.eDx=(FLOAT)(area->left+boxw/2);xf.eDy=(FLOAT)(area->top+boxh/2);SetGraphicsMode(dc,GM_ADVANCED);SetWorldTransform(dc,&xf);StretchBlt(dc,-rw/2,-rh/2,rw,rh,mem,0,0,b.bmWidth,b.bmHeight,SRCCOPY);ModifyWorldTransform(dc,NULL,MWT_IDENTITY);}
- SelectObject(mem,old);DeleteDC(mem);DeleteObject(bmp);return S_OK;
+ HBITMAP bmp=image_thumbnail(path,2400);if(!bmp)return E_FAIL;
+ BITMAP b={0};if(!GetObjectW(bmp,sizeof(b),&b)){DeleteObject(bmp);return E_FAIL;}
+ int boxw=area->right-area->left,boxh=area->bottom-area->top;
+ if(boxw<=0||boxh<=0||b.bmWidth<=0||b.bmHeight<=0){DeleteObject(bmp);return E_INVALIDARG;}
+ /* Fit against the post-rotation bounding box, not the source dimensions. */
+ int angle=rotation%360;if(angle<0)angle+=360;
+ int quarter_turn=(angle==90||angle==270);
+ double rotated_w=(double)(quarter_turn?b.bmHeight:b.bmWidth);
+ double rotated_h=(double)(quarter_turn?b.bmWidth:b.bmHeight);
+ double sx=(double)boxw/rotated_w,sy=(double)boxh/rotated_h;
+ double scale=sx<sy?sx:sy;
+ int dw=(int)(b.bmWidth*scale+0.5),dh=(int)(b.bmHeight*scale+0.5);
+ if(dw<1)dw=1;if(dh<1)dh=1;
+ HDC mem=CreateCompatibleDC(dc);if(!mem){DeleteObject(bmp);return E_FAIL;}
+ HGDIOBJ old=SelectObject(mem,bmp);if(!old||old==HGDI_ERROR){DeleteDC(mem);DeleteObject(bmp);return E_FAIL;}
+ int saved=SaveDC(dc);SetStretchBltMode(dc,HALFTONE);
+ XFORM xf={0};double rad=(double)angle*3.14159265358979323846/180.0;
+ xf.eM11=(FLOAT)cos(rad);xf.eM12=(FLOAT)sin(rad);
+ xf.eM21=(FLOAT)-sin(rad);xf.eM22=(FLOAT)cos(rad);
+ xf.eDx=(FLOAT)((area->left+area->right)/2.0);
+ xf.eDy=(FLOAT)((area->top+area->bottom)/2.0);
+ HRESULT hr=E_FAIL;
+ if(saved&&SetGraphicsMode(dc,GM_ADVANCED)&&SetWorldTransform(dc,&xf)){
+  /* Draw the unrotated source rectangle around the origin. The world
+     transform rotates its true bounds (including width/height swapping). */
+  if(StretchBlt(dc,-dw/2,-dh/2,dw,dh,mem,0,0,b.bmWidth,b.bmHeight,SRCCOPY))hr=S_OK;
+ }
+ if(saved)RestoreDC(dc,saved);
+ SelectObject(mem,old);DeleteDC(mem);DeleteObject(bmp);return hr;
 }
