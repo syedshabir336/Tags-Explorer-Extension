@@ -126,21 +126,55 @@ static void open_viewer(int index){
  if(index<0||index>=photo_count)return;viewer_index=index;viewer_rotation=0;
  WNDCLASSW wc={0};wc.lpfnWndProc=NULL;wc.hInstance=app_instance;wc.lpszClassName=VIEWER_CLASS;
 }
+#define ID_RENAME_EDIT 1301
+#define ID_RENAME_OK 1302
+#define ID_RENAME_CANCEL 1303
+static wchar_t rename_input[MAX_PATH];
+static HWND rename_edit;
+static LRESULT CALLBACK rename_prompt_proc(HWND d,UINT msg,WPARAM wp,LPARAM lp){
+ switch(msg){
+ case WM_CREATE:{
+  CreateWindowExW(0,L"STATIC",L"New file name (the original image will be renamed in place):",WS_CHILD|WS_VISIBLE,16,16,390,22,d,NULL,app_instance,NULL);
+  rename_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",rename_input,WS_CHILD|WS_VISIBLE|WS_TABSTOP|ES_AUTOHSCROLL,16,44,390,28,d,(HMENU)(INT_PTR)ID_RENAME_EDIT,app_instance,NULL);
+  SendMessageW(rename_edit,WM_SETFONT,(WPARAM)font_ui,TRUE);
+  HWND ok=make_button(d,L"Rename",ID_RENAME_OK,230,86,84,32);
+  make_button(d,L"Cancel",ID_RENAME_CANCEL,322,86,84,32);
+  SetFocus(rename_edit);SendMessageW(rename_edit,EM_SETSEL,0,-1);return 0;}
+ case WM_COMMAND:
+  if(LOWORD(wp)==ID_RENAME_OK){GetWindowTextW(rename_edit,rename_input,MAX_PATH);if(rename_input[0])DestroyWindow(d);return 0;}
+  if(LOWORD(wp)==ID_RENAME_CANCEL){rename_input[0]=0;DestroyWindow(d);return 0;}break;
+ case WM_CLOSE:rename_input[0]=0;DestroyWindow(d);return 0;
+ }
+ return DefWindowProcW(d,msg,wp,lp);
+}
+static int prompt_rename(HWND owner,const wchar_t *current_name,wchar_t *new_name,size_t capacity){
+ WNDCLASSW wc={0};wc.lpfnWndProc=rename_prompt_proc;wc.hInstance=app_instance;wc.lpszClassName=L"TagExplorerRenamePrompt";wc.hCursor=LoadCursorW(NULL,IDC_ARROW);wc.hbrBackground=(HBRUSH)(COLOR_WINDOW+1);
+ RegisterClassW(&wc);
+ lstrcpynW(rename_input,current_name,MAX_PATH);
+ HWND d=CreateWindowExW(WS_EX_DLGMODALFRAME, L"TagExplorerRenamePrompt",L"Rename original image",WS_CAPTION|WS_SYSMENU|WS_POPUP|WS_VISIBLE,CW_USEDEFAULT,CW_USEDEFAULT,440,168,owner,NULL,app_instance,NULL);
+ if(!d)return 0;
+ RECT r;GetWindowRect(d,&r);int x=(GetSystemMetrics(SM_CXSCREEN)-(r.right-r.left))/2,y=(GetSystemMetrics(SM_CYSCREEN)-(r.bottom-r.top))/2;SetWindowPos(d,NULL,x,y,0,0,SWP_NOSIZE|SWP_NOZORDER);
+ EnableWindow(owner,FALSE);SetForegroundWindow(d);SetFocus(rename_edit);
+ MSG msg;while(IsWindow(d)&&GetMessageW(&msg,NULL,0,0)>0){if(!IsDialogMessageW(d,&msg)){TranslateMessage(&msg);DispatchMessageW(&msg);}}
+ EnableWindow(owner,TRUE);SetForegroundWindow(owner);
+ if(!rename_input[0])return 0;
+ lstrcpynW(new_name,rename_input,(int)capacity);return 1;
+}
 static void viewer_rename(HWND w){
  if(viewer_index<0||viewer_index>=photo_count)return;
- wchar_t target[MAX_PATH];lstrcpynW(target,PathFindFileNameW(photo_paths[viewer_index]),MAX_PATH);
- OPENFILENAMEW ofn={0};ofn.lStructSize=sizeof(ofn);ofn.hwndOwner=w;ofn.lpstrFile=target;ofn.nMaxFile=MAX_PATH;
- wchar_t initial_dir[MAX_PATH];lstrcpynW(initial_dir,photo_paths[viewer_index],MAX_PATH);PathRemoveFileSpecW(initial_dir);ofn.lpstrInitialDir=initial_dir;
- ofn.lpstrFilter=L"Image files\0*.jpg;*.jpeg;*.png;*.bmp;*.gif;*.tif;*.tiff;*.webp;*.heic\0All files\0*.*\0";
- ofn.Flags=OFN_EXPLORER|OFN_PATHMUSTEXIST|OFN_NOCHANGEDIR;
- if(!GetSaveFileNameW(&ofn))return;
- if(!_wcsicmp(target,photo_paths[viewer_index]))return;
- if(GetFileAttributesW(target)!=INVALID_FILE_ATTRIBUTES){MessageBoxW(w,L"A file with that name already exists.",L"Rename photo",MB_ICONWARNING);return;}
- wchar_t old[MAX_PATH];lstrcpynW(old,photo_paths[viewer_index],MAX_PATH);
- if(!MoveFileW(old,target)){MessageBoxW(w,L"Windows could not rename this photo.",L"Rename photo",MB_ICONERROR);return;}
- if(!catalog_rename(old,target)){MoveFileW(target,old);MessageBoxW(w,L"The catalog could not update the renamed photo.",L"Rename photo",MB_ICONERROR);return;}
- free(photo_paths[viewer_index]);photo_paths[viewer_index]=_wcsdup(target);
- SetWindowTextW(w,PathFindFileNameW(target));set_status(L"Photo renamed.");InvalidateRect(w,NULL,TRUE);
+ wchar_t old[MAX_PATH],folder[MAX_PATH],name[MAX_PATH],target[MAX_PATH];
+ lstrcpynW(old,photo_paths[viewer_index],MAX_PATH);lstrcpynW(folder,old,MAX_PATH);PathRemoveFileSpecW(folder);
+ lstrcpynW(name,PathFindFileNameW(old),MAX_PATH);
+ if(!prompt_rename(w,name,target,MAX_PATH))return;
+ if(wcschr(target,L'\\')||wcschr(target,L'/')||wcschr(target,L':')){MessageBoxW(w,L"Enter only a file name, not a folder path.",L"Rename photo",MB_ICONWARNING);return;}
+ if(!_wcsicmp(name,target))return;
+ wchar_t new_path[MAX_PATH];lstrcpynW(new_path,folder,MAX_PATH);if(!PathAppendW(new_path,target)){MessageBoxW(w,L"The new file name is too long.",L"Rename photo",MB_ICONERROR);return;}
+ if(GetFileAttributesW(new_path)!=INVALID_FILE_ATTRIBUTES){MessageBoxW(w,L"A file with that name already exists in this folder.",L"Rename photo",MB_ICONWARNING);return;}
+ /* MoveFileW performs a same-folder rename; it does not encode, save, or copy image data. */
+ if(!MoveFileW(old,new_path)){MessageBoxW(w,L"Windows could not rename the original image.",L"Rename photo",MB_ICONERROR);return;}
+ if(!catalog_rename(old,new_path)){MoveFileW(new_path,old);MessageBoxW(w,L"The catalog could not update the renamed photo. The original filename was restored.",L"Rename photo",MB_ICONERROR);return;}
+ free(photo_paths[viewer_index]);photo_paths[viewer_index]=_wcsdup(new_path);
+ SetWindowTextW(w,PathFindFileNameW(new_path));set_status(L"Original image renamed in its existing folder.");InvalidateRect(w,NULL,TRUE);
 }
 static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
  switch(msg){
