@@ -18,7 +18,7 @@ enum { CMD_ADD_FOLDER=1102,CMD_ADD_FILES=1103,CMD_SEARCH=1105,CMD_REFRESH=1105,
 typedef struct { int id; const char *file; HICON icon; } IconEntry;
 static IconEntry g_icons[]={
  {CMD_ADD_FOLDER,"folder-plus.svg",NULL},{CMD_ADD_FILES,"photo.svg",NULL},
- {CMD_REFRESH,"refresh.svg",NULL},{CMD_APPLY_TAGS,"tag.svg",NULL},
+ {CMD_REFRESH,"search.svg",NULL},{CMD_APPLY_TAGS,"tag.svg",NULL},
  {CMD_OPEN,"external-link.svg",NULL},{CMD_SHELL,"folder.svg",NULL},
  {CMD_NAVIGATE,"arrow-right.svg",NULL},{CMD_ROTATE_LEFT,"rotate-2.svg",NULL},
  {CMD_ROTATE_RIGHT,"rotate-clockwise-2.svg",NULL},{CMD_RENAME,"edit.svg",NULL},
