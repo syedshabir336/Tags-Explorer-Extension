@@ -46,7 +46,7 @@
 #define ID_VIEW_PREVIOUS 1208
 #define ID_VIEW_NEXT 1209
 #define WM_APP_ROTATE_COMPLETE (WM_APP+41)
-static HWND viewer_tags_edit,viewer_window;
+static HWND viewer_tags_edit,viewer_window,viewer_status;
 static HACCEL viewer_accel;
 static int viewer_rotation_busy;
 typedef struct { HWND window; wchar_t path[MAX_PATH]; int degrees; HRESULT result; } RotateJob;
@@ -71,6 +71,7 @@ static COLORREF bg_main=RGB(31,31,33),bg_panel=RGB(43,43,46),bg_input=RGB(55,55,
 static COLORREF fg_main=RGB(238,238,240),fg_muted=RGB(151,153,158),accent=RGB(79,174,184);
 
 static void set_status(const wchar_t *s){if(status_text)SetWindowTextW(status_text,s);}
+static void set_viewer_status(const wchar_t *s){if(viewer_status)SetWindowTextW(viewer_status,s);}
 static void free_results(void){if(photo_paths)catalog_free_results(photo_paths,photo_tags,photo_count);photo_paths=photo_tags=NULL;photo_count=0;}
 static HWND make_label(HWND parent,const wchar_t *text,int x,int y,int w,int h,HFONT font,COLORREF color){
  HWND hnd=CreateWindowExW(0,L"STATIC",text,WS_CHILD|WS_VISIBLE|SS_LEFT,x,y,w,h,parent,NULL,app_instance,NULL);
@@ -281,6 +282,7 @@ static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   make_button(w,L"Add tags",ID_VIEW_APPLY_TAGS,820,12,96,34);
   make_button(w,L"Previous",ID_VIEW_PREVIOUS,924,12,82,34);
   make_button(w,L"Next",ID_VIEW_NEXT,1014,12,68,34);
+  viewer_status=make_label(w,L"Ready",16,0,520,22,font_small,fg_muted);
   return 0;
  case WM_SIZE:{
   int width=LOWORD(lp);MoveWindow(GetDlgItem(w,ID_VIEW_ROTATE_LEFT),16,12,104,34,TRUE);
@@ -291,7 +293,8 @@ static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   MoveWindow(viewer_tags_edit,550,12,width-838>100?width-838:100,34,TRUE);
   MoveWindow(GetDlgItem(w,ID_VIEW_APPLY_TAGS),width-276,12,88,34,TRUE);
   MoveWindow(GetDlgItem(w,ID_VIEW_PREVIOUS),width-180,12,82,34,TRUE);
-  MoveWindow(GetDlgItem(w,ID_VIEW_NEXT),width-90,12,74,34,TRUE);return 0;}
+  MoveWindow(GetDlgItem(w,ID_VIEW_NEXT),width-90,12,74,34,TRUE);
+  RECT client;GetClientRect(w,&client);if(viewer_status)MoveWindow(viewer_status,16,client.bottom-28,520,20,TRUE);return 0;}
  case WM_COMMAND:
   switch(LOWORD(wp)){
    case ID_VIEW_ROTATE_LEFT:
@@ -302,9 +305,9 @@ static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
     lstrcpynW(job->path,photo_paths[viewer_index],MAX_PATH);
     viewer_rotation_busy=1;
     EnableWindow(GetDlgItem(w,ID_VIEW_ROTATE_LEFT),FALSE);EnableWindow(GetDlgItem(w,ID_VIEW_ROTATE_RIGHT),FALSE);
-    set_status(L"Saving rotation to the original image... You can keep browsing.");
+    set_viewer_status(L"Saving rotation to the original image... You can keep browsing.");
     HANDLE thread=CreateThread(NULL,0,rotate_worker,job,0,NULL);
-    if(!thread){viewer_rotation_busy=0;EnableWindow(GetDlgItem(w,ID_VIEW_ROTATE_LEFT),TRUE);EnableWindow(GetDlgItem(w,ID_VIEW_ROTATE_RIGHT),TRUE);free(job);set_status(L"Could not start the image rotation task.");}
+    if(!thread){viewer_rotation_busy=0;EnableWindow(GetDlgItem(w,ID_VIEW_ROTATE_LEFT),TRUE);EnableWindow(GetDlgItem(w,ID_VIEW_ROTATE_RIGHT),TRUE);free(job);set_viewer_status(L"Could not start the image rotation task.");}
     else CloseHandle(thread);
     SetFocus(w);return 0;
    }
@@ -326,14 +329,14 @@ static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   if(SUCCEEDED(job->result)){
    image_invalidate_cache(job->path);
    if(viewer_index>=0&&viewer_index<photo_count&&!_wcsicmp(photo_paths[viewer_index],job->path)){viewer_rotation=0;InvalidateRect(w,NULL,TRUE);}
-   set_status(L"Rotation saved to the original image file.");
+   {wchar_t saved[160];swprintf(saved,160,L"Rotation saved to original file: %s",PathFindFileNameW(job->path));set_viewer_status(saved);}
   }else{
    wchar_t error[192];swprintf(error,192,L"Could not save rotation (0x%08X). The original image was left unchanged.",(unsigned)job->result);
-   set_status(error);MessageBoxW(w,error,L"Rotate image",MB_ICONERROR);
+   set_viewer_status(error);MessageBoxW(w,error,L"Rotate image",MB_ICONERROR);
   }
   free(job);SetFocus(w);return 0;
  }
- case WM_DESTROY:if(viewer_window==w)viewer_window=NULL;InterlockedExchange(&viewer_rotation_busy,0);image_invalidate_cache(NULL);if(main_window&&IsWindow(main_window))refresh_catalog();return 0;
+ case WM_DESTROY:if(viewer_window==w)viewer_window=NULL;viewer_status=NULL;InterlockedExchange(&viewer_rotation_busy,0);image_invalidate_cache(NULL);if(main_window&&IsWindow(main_window))refresh_catalog();return 0;
  case WM_PAINT:{PAINTSTRUCT ps;HDC dc=BeginPaint(w,&ps);RECT rc;GetClientRect(w,&rc);FillRect(dc,&rc,(HBRUSH)GetStockObject(BLACK_BRUSH));rc.top+=58;if(photo_count)image_draw(dc,&rc,photo_paths[viewer_index],viewer_rotation);EndPaint(w,&ps);return 0;}
  }return DefWindowProcW(w,msg,wp,lp);
 }
