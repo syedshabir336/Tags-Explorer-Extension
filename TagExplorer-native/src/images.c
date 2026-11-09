@@ -61,8 +61,8 @@ HRESULT image_draw(HDC dc,const RECT *area,const wchar_t *path,int rotation){
    and encoder are released before replacement so Windows can rename the file. */
 HRESULT image_rotate_file(const wchar_t *path, int clockwise_degrees){
  if(!path || (clockwise_degrees!=90 && clockwise_degrees!=270)) return E_INVALIDARG;
- HRESULT hr=factory_get(); if(FAILED(hr)) return hr;
- IWICBitmapDecoder *decoder=NULL; IWICBitmapFrameDecode *frame=NULL;
+ HRESULT hr=CoCreateInstance(&CLSID_WICImagingFactory,NULL,CLSCTX_INPROC_SERVER,&IID_IWICImagingFactory,(void**)&local_factory); if(FAILED(hr)) return hr;
+ IWICImagingFactory *local_factory=NULL; IWICBitmapDecoder *decoder=NULL; IWICBitmapFrameDecode *frame=NULL;
  IWICBitmapFlipRotator *rotator=NULL; IWICBitmapEncoder *encoder=NULL;
  IWICBitmapFrameEncode *out_frame=NULL; IPropertyBag2 *options=NULL;
  IWICStream *stream=NULL; GUID container={0},pixel_format={0};
@@ -71,19 +71,19 @@ HRESULT image_rotate_file(const wchar_t *path, int clockwise_degrees){
  wchar_t *slash=wcsrchr(folder,L'\\'); if(!slash) slash=wcsrchr(folder,L'/');
  if(slash) slash[1]=0; else lstrcpyW(folder,L".\\");
  if(!GetTempFileNameW(folder,L"ter",0,temp)) return HRESULT_FROM_WIN32(GetLastError());
- hr=IWICImagingFactory_CreateDecoderFromFilename(factory,path,NULL,GENERIC_READ,WICDecodeMetadataCacheOnDemand,&decoder);
+ hr=IWICImagingFactory_CreateDecoderFromFilename(local_factory,path,NULL,GENERIC_READ,WICDecodeMetadataCacheOnDemand,&decoder);
  if(FAILED(hr)) goto done;
  hr=IWICBitmapDecoder_GetContainerFormat(decoder,&container); if(FAILED(hr)) goto done;
  hr=IWICBitmapDecoder_GetFrame(decoder,0,&frame); if(FAILED(hr)) goto done;
  hr=IWICBitmapFrameDecode_GetSize(frame,&width,&height); if(FAILED(hr)) goto done;
  IWICBitmapFrameDecode_GetResolution(frame,&dpi_x,&dpi_y);
- hr=IWICImagingFactory_CreateBitmapFlipRotator(factory,&rotator); if(FAILED(hr)) goto done;
+ hr=IWICImagingFactory_CreateBitmapFlipRotator(local_factory,&rotator); if(FAILED(hr)) goto done;
  hr=IWICBitmapFlipRotator_Initialize(rotator,(IWICBitmapSource*)frame,
       clockwise_degrees==90?WICBitmapTransformRotate90:WICBitmapTransformRotate270);
  if(FAILED(hr)) goto done;
- hr=IWICImagingFactory_CreateStream(factory,&stream); if(FAILED(hr)) goto done;
+ hr=IWICImagingFactory_CreateStream(local_factory,&stream); if(FAILED(hr)) goto done;
  hr=IWICStream_InitializeFromFilename(stream,temp,GENERIC_WRITE); if(FAILED(hr)) goto done;
- hr=IWICImagingFactory_CreateEncoder(factory,&container,NULL,&encoder); if(FAILED(hr)) goto done;
+ hr=IWICImagingFactory_CreateEncoder(local_factory,&container,NULL,&encoder); if(FAILED(hr)) goto done;
  hr=IWICBitmapEncoder_Initialize(encoder,(IStream*)stream,WICBitmapEncoderNoCache); if(FAILED(hr)) goto done;
  hr=IWICBitmapEncoder_CreateNewFrame(encoder,&out_frame,&options); if(FAILED(hr)) goto done;
  hr=IWICBitmapFrameEncode_Initialize(out_frame,options); if(FAILED(hr)) goto done;
@@ -98,6 +98,7 @@ HRESULT image_rotate_file(const wchar_t *path, int clockwise_degrees){
  hr=IWICBitmapEncoder_Commit(encoder); if(FAILED(hr)) goto done;
 done:
  if(options) IPropertyBag2_Release(options);
+ if(local_factory) IWICImagingFactory_Release(local_factory);
  if(out_frame) IWICBitmapFrameEncode_Release(out_frame);
  if(encoder) IWICBitmapEncoder_Release(encoder);
  if(stream) IWICStream_Release(stream);
