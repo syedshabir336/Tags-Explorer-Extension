@@ -61,8 +61,8 @@ HRESULT image_draw(HDC dc,const RECT *area,const wchar_t *path,int rotation){
    and encoder are released before replacement so Windows can rename the file. */
 HRESULT image_rotate_file(const wchar_t *path, int clockwise_degrees){
  if(!path || (clockwise_degrees!=90 && clockwise_degrees!=270)) return E_INVALIDARG;
- HRESULT hr=CoCreateInstance(&CLSID_WICImagingFactory,NULL,CLSCTX_INPROC_SERVER,&IID_IWICImagingFactory,(void**)&local_factory); if(FAILED(hr)) return hr;
  IWICImagingFactory *local_factory=NULL; IWICBitmapDecoder *decoder=NULL; IWICBitmapFrameDecode *frame=NULL;
+ HRESULT hr;
  IWICBitmapFlipRotator *rotator=NULL; IWICBitmapEncoder *encoder=NULL;
  IWICBitmapFrameEncode *out_frame=NULL; IPropertyBag2 *options=NULL;
  IWICStream *stream=NULL; GUID container={0},pixel_format={0};
@@ -71,6 +71,8 @@ HRESULT image_rotate_file(const wchar_t *path, int clockwise_degrees){
  wchar_t *slash=wcsrchr(folder,L'\\'); if(!slash) slash=wcsrchr(folder,L'/');
  if(slash) slash[1]=0; else lstrcpyW(folder,L".\\");
  if(!GetTempFileNameW(folder,L"ter",0,temp)) return HRESULT_FROM_WIN32(GetLastError());
+ hr=CoCreateInstance(&CLSID_WICImagingFactory,NULL,CLSCTX_INPROC_SERVER,&IID_IWICImagingFactory,(void**)&local_factory);
+ if(FAILED(hr)){DeleteFileW(temp);return hr;}
  hr=IWICImagingFactory_CreateDecoderFromFilename(local_factory,path,NULL,GENERIC_READ,WICDecodeMetadataCacheOnDemand,&decoder);
  if(FAILED(hr)) goto done;
  hr=IWICBitmapDecoder_GetContainerFormat(decoder,&container); if(FAILED(hr)) goto done;
