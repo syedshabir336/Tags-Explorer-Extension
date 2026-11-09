@@ -14,9 +14,9 @@
 enum { CMD_ADD_FOLDER=1102,CMD_ADD_FILES=1103,CMD_SEARCH=1105,CMD_REFRESH=1105,
  CMD_APPLY_TAGS=1107,CMD_OPEN=1108,CMD_SHELL=1109,CMD_NAVIGATE=1115,
  CMD_ROTATE_LEFT=1201,CMD_ROTATE_RIGHT=1202,CMD_RENAME=1203,CMD_VIEW_APPLY_TAGS=1205,
- CMD_RENAME_OK=1302,CMD_RENAME_CANCEL=1303 };
+ CMD_RENAME_OK=1302,CMD_RENAME_CANCEL=1303,CMD_SOURCE_LIST=1101,CMD_TAG_LIST=1113 };
 typedef struct { int id; const char *file; HICON icon; } IconEntry;
-static IconEntry g_icons[]={
+static IconEntry g_icons[]={\n {CMD_SOURCE_LIST,"photo-scan.svg",NULL},{CMD_TAG_LIST,"tag.svg",NULL},
  {CMD_ADD_FOLDER,"folder-plus.svg",NULL},{CMD_ADD_FILES,"photo.svg",NULL},
  {CMD_REFRESH,"search.svg",NULL},{CMD_APPLY_TAGS,"tag.svg",NULL},
  {CMD_OPEN,"external-link.svg",NULL},{CMD_SHELL,"folder.svg",NULL},
@@ -64,7 +64,20 @@ int icons_init(void){
 }
 void icons_shutdown(void){for(size_t i=0;i<sizeof(g_icons)/sizeof(g_icons[0]);i++){if(g_icons[i].icon){DestroyIcon(g_icons[i].icon);g_icons[i].icon=NULL;}}}
 BOOL icons_draw_button(const DRAWITEMSTRUCT *d){
- if(!d||d->CtlType!=ODT_BUTTON)return FALSE;
+ if(!d)return FALSE;
+ if(d->CtlType==ODT_LISTBOX){
+  int id=GetDlgCtrlID(d->hwndItem);HICON icon=NULL;
+  for(size_t i=0;i<sizeof(g_icons)/sizeof(g_icons[0]);i++)if(g_icons[i].id==id){icon=g_icons[i].icon;break;}
+  HBRUSH bg=CreateSolidBrush((d->itemState&ODS_SELECTED)?RGB(57,69,73):RGB(43,43,46));
+  FillRect(d->hDC,&d->rcItem,bg);DeleteObject(bg);
+  wchar_t label[512]=L"";if(d->itemID!=(UINT)-1)SendMessageW(d->hwndItem,LB_GETTEXT,d->itemID,(LPARAM)label);
+  int left=d->rcItem.left+10;if(icon){DrawIconEx(d->hDC,left,d->rcItem.top+5,icon,17,17,0,NULL,DI_NORMAL);left+=25;}
+  RECT tr={left,d->rcItem.top+1,d->rcItem.right-6,d->rcItem.bottom-1};
+  SetBkMode(d->hDC,TRANSPARENT);SetTextColor(d->hDC,RGB(226,229,233));
+  DrawTextW(d->hDC,label,-1,&tr,DT_SINGLELINE|DT_VCENTER|DT_LEFT|DT_END_ELLIPSIS);
+  return TRUE;
+ }
+ if(d->CtlType!=ODT_BUTTON)return FALSE;
  HBRUSH bg=CreateSolidBrush((d->itemState&ODS_SELECTED)?RGB(59,68,72):RGB(48,49,53));
  FillRect(d->hDC,&d->rcItem,bg);DeleteObject(bg);
  HPEN pen=CreatePen(PS_SOLID,1,(d->itemState&ODS_FOCUS)?RGB(79,174,184):RGB(67,69,74));
@@ -77,7 +90,9 @@ BOOL icons_draw_button(const DRAWITEMSTRUCT *d){
  if(icon){int iy=r.top+((r.bottom-r.top)-18)/2;DrawIconEx(d->hDC,left,iy,icon,18,18,0,NULL,DI_NORMAL);left+=27;}
  wchar_t label[128]=L"";GetWindowTextW(d->hwndItem,label,128);
  RECT tr={left,r.top+2,r.right-8,r.bottom-2};SetBkMode(d->hDC,TRANSPARENT);
- SetTextColor(d->hDC,RGB(235,237,240));SelectObject(d->hDC,GetStockObject(DEFAULT_GUI_FONT));
+ SetTextColor(d->hDC,RGB(235,237,240));
+ HFONT font=(HFONT)SendMessageW(d->hwndItem,WM_GETFONT,0,0);HGDIOBJ oldfont=font?SelectObject(d->hDC,font):NULL;
  DrawTextW(d->hDC,label,-1,&tr,DT_SINGLELINE|DT_VCENTER|DT_LEFT|DT_END_ELLIPSIS);
+ if(oldfont)SelectObject(d->hDC,oldfont);
  if(d->itemState&ODS_FOCUS){RECT fr=r;InflateRect(&fr,-4,-4);DrawFocusRect(d->hDC,&fr);}return TRUE;
 }
