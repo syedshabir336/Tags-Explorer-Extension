@@ -43,6 +43,8 @@
 #define ID_VIEW_APPLY_TAGS 1205
 #define ID_VIEW_MONTH_TAG 1206
 #define ID_VIEW_YEAR_TAG 1207
+#define ID_VIEW_PREVIOUS 1208
+#define ID_VIEW_NEXT 1209
 static HWND viewer_tags_edit;
 
 static HINSTANCE app_instance;
@@ -222,6 +224,8 @@ static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   viewer_tags_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL,550,12,260,34,w,(HMENU)(INT_PTR)ID_VIEW_TAGS,app_instance,NULL);
   SendMessageW(viewer_tags_edit,WM_SETFONT,(WPARAM)font_ui,TRUE);
   make_button(w,L"Add tags",ID_VIEW_APPLY_TAGS,820,12,96,34);
+  make_button(w,L"Previous",ID_VIEW_PREVIOUS,924,12,82,34);
+  make_button(w,L"Next",ID_VIEW_NEXT,1014,12,68,34);
   return 0;
  case WM_SIZE:{
   int width=LOWORD(lp);MoveWindow(GetDlgItem(w,ID_VIEW_ROTATE_LEFT),16,12,104,34,TRUE);
@@ -230,21 +234,40 @@ static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   MoveWindow(GetDlgItem(w,ID_VIEW_MONTH_TAG),344,12,100,34,TRUE);
   MoveWindow(GetDlgItem(w,ID_VIEW_YEAR_TAG),452,12,90,34,TRUE);
   MoveWindow(viewer_tags_edit,550,12,width-650>150?width-650:150,34,TRUE);
-  MoveWindow(GetDlgItem(w,ID_VIEW_APPLY_TAGS),width-96,12,80,34,TRUE);return 0;}
+  MoveWindow(GetDlgItem(w,ID_VIEW_APPLY_TAGS),width-276,12,88,34,TRUE);
+  MoveWindow(GetDlgItem(w,ID_VIEW_PREVIOUS),width-180,12,82,34,TRUE);
+  MoveWindow(GetDlgItem(w,ID_VIEW_NEXT),width-90,12,74,34,TRUE);return 0;}
  case WM_COMMAND:
   switch(LOWORD(wp)){
-   case ID_VIEW_ROTATE_LEFT:viewer_rotation=(viewer_rotation+270)%360;InvalidateRect(w,NULL,TRUE);return 0;
-   case ID_VIEW_ROTATE_RIGHT:viewer_rotation=(viewer_rotation+90)%360;InvalidateRect(w,NULL,TRUE);return 0;
-   case ID_VIEW_RENAME:viewer_rename(w);return 0;
+   case ID_VIEW_ROTATE_LEFT:
+   case ID_VIEW_ROTATE_RIGHT:{
+    if(viewer_index<0||viewer_index>=photo_count)return 0;
+    int degrees=LOWORD(wp)==ID_VIEW_ROTATE_RIGHT?90:270;
+    SetCursor(LoadCursorW(NULL,IDC_WAIT));
+    HRESULT rotate_hr=image_rotate_file(photo_paths[viewer_index],degrees);
+    SetCursor(LoadCursorW(NULL,IDC_ARROW));
+    if(SUCCEEDED(rotate_hr)){
+     viewer_rotation=0;InvalidateRect(w,NULL,TRUE);
+     set_status(L"Rotation saved to the original image file.");
+    }else{
+     wchar_t error[192];swprintf(error,192,L"Could not save rotation (0x%08X). The original image was not replaced.",(unsigned)rotate_hr);
+     set_status(error);MessageBoxW(w,error,L"Rotate image",MB_ICONERROR);
+    }
+    SetFocus(w);return 0;
+   }
+   case ID_VIEW_PREVIOUS:if(photo_count){viewer_index=(viewer_index+photo_count-1)%photo_count;viewer_rotation=0;SetWindowTextW(w,PathFindFileNameW(photo_paths[viewer_index]));InvalidateRect(w,NULL,TRUE);}SetFocus(w);return 0;
+   case ID_VIEW_NEXT:if(photo_count){viewer_index=(viewer_index+1)%photo_count;viewer_rotation=0;SetWindowTextW(w,PathFindFileNameW(photo_paths[viewer_index]));InvalidateRect(w,NULL,TRUE);}SetFocus(w);return 0;
+   case ID_VIEW_RENAME:viewer_rename(w);SetFocus(w);return 0;
    case ID_VIEW_MONTH_TAG:viewer_choose_month_tag(w);return 0;
    case ID_VIEW_YEAR_TAG:viewer_enter_year_tag(w);return 0;
    case ID_VIEW_APPLY_TAGS:{wchar_t tags[512];GetWindowTextW(viewer_tags_edit,tags,512);if(tags[0]&&catalog_apply_tags(photo_paths[viewer_index],tags)){SetWindowTextW(viewer_tags_edit,L"");set_status(L"Tags added to this photo.");}else set_status(L"Enter one or more comma-separated tags.");return 0;}
   }break;
  case WM_KEYDOWN:
   if(wp==VK_ESCAPE){DestroyWindow(w);return 0;}
-  if(wp==VK_RIGHT&&photo_count){viewer_index=(viewer_index+1)%photo_count;viewer_rotation=0;SetWindowTextW(w,PathFindFileNameW(photo_paths[viewer_index]));InvalidateRect(w,NULL,TRUE);}
-  if(wp==VK_LEFT&&photo_count){viewer_index=(viewer_index+photo_count-1)%photo_count;viewer_rotation=0;SetWindowTextW(w,PathFindFileNameW(photo_paths[viewer_index]));InvalidateRect(w,NULL,TRUE);}
+  if(wp==VK_RIGHT&&photo_count){viewer_index=(viewer_index+1)%photo_count;viewer_rotation=0;SetWindowTextW(w,PathFindFileNameW(photo_paths[viewer_index]));InvalidateRect(w,NULL,TRUE);return 0;}
+  if(wp==VK_LEFT&&photo_count){viewer_index=(viewer_index+photo_count-1)%photo_count;viewer_rotation=0;SetWindowTextW(w,PathFindFileNameW(photo_paths[viewer_index]));InvalidateRect(w,NULL,TRUE);return 0;}
   if(wp=='R'){viewer_rotation=(viewer_rotation+90)%360;InvalidateRect(w,NULL,TRUE);}return 0;
+ case WM_DESTROY:if(main_window)refresh_catalog();return 0;
  case WM_PAINT:{PAINTSTRUCT ps;HDC dc=BeginPaint(w,&ps);RECT rc;GetClientRect(w,&rc);FillRect(dc,&rc,(HBRUSH)GetStockObject(BLACK_BRUSH));rc.top+=58;if(photo_count)image_draw(dc,&rc,photo_paths[viewer_index],viewer_rotation);EndPaint(w,&ps);return 0;}
  }return DefWindowProcW(w,msg,wp,lp);
 }
