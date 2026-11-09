@@ -36,6 +36,16 @@ public partial class MainWindow : Window
         PreviewKeyDown += MainWindow_PreviewKeyDown;
     }
 
+    private void ViewPhoto_Click(object sender, RoutedEventArgs e) => OpenSelectedPhoto();
+    private void PhotoList_MouseDoubleClick(object sender, MouseButtonEventArgs e) => OpenSelectedPhoto();
+    private void OpenSelectedPhoto()
+    {
+        if (PhotoList.SelectedItem is not PhotoItem selected) return;
+        var paths = _photos.Select(p => p.Path).ToList();
+        var index = paths.FindIndex(p => string.Equals(p, selected.Path, StringComparison.OrdinalIgnoreCase));
+        if (index >= 0) new PhotoViewerWindow(paths, index) { Owner = this }.ShowDialog();
+    }
+
     private void AddFiles_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new OpenFileDialog
