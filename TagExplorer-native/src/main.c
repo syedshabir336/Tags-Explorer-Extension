@@ -245,7 +245,7 @@ static void viewer_apply_date_tag(const wchar_t *tag){
 }
 static int prompt_tag_year(HWND owner,wchar_t *year,size_t capacity){
  SYSTEMTIME now;GetLocalTime(&now);swprintf(year,capacity,L"%04u",(unsigned)now.wYear);
- if(!prompt_value(owner,L"Choose year",L"Enter the year for this month:",year,year,capacity))return 0;
+ if(!prompt_value(owner,L"Choose year",L"Enter a four-digit year:",year,year,capacity))return 0;
  if(wcslen(year)!=4||year[0]<L'0'||year[0]>L'9'||year[1]<L'0'||year[1]>L'9'||year[2]<L'0'||year[2]>L'9'||year[3]<L'0'||year[3]>L'9'){
   MessageBoxW(owner,L"Enter a valid four-digit year, such as 2026.",L"Year tag",MB_ICONWARNING);return 0;
  }
