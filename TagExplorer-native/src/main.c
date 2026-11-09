@@ -87,7 +87,7 @@ static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   tag_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL,460,44,260,26,w,(HMENU)IDC_TAG,app_instance,NULL);
   CreateWindowW(L"BUTTON",L"Apply tags",WS_CHILD|WS_VISIBLE|WS_TABSTOP,728,44,90,26,w,(HMENU)(INT_PTR)(IDC_TAG+100),app_instance,NULL);
   CreateWindowW(L"BUTTON",L"View",WS_CHILD|WS_VISIBLE|WS_TABSTOP,826,44,70,26,w,(HMENU)(INT_PTR)IDC_OPEN,app_instance,NULL);
-  photo_list=CreateWindowW(WC_LISTVIEWW,L"",WS_CHILD|WS_VISIBLE|WS_BORDER|LVS_ICON|LVS_SINGLESEL|LVS_SHOWSELALWAYS,10,80,680,540,w,(HMENU)(INT_PTR)IDC_LIST,app_instance,NULL);
+  photo_list=CreateWindowW(WC_LISTVIEWW,L"",WS_CHILD|WS_VISIBLE|WS_BORDER|LVS_ICON|LVS_SHOWSELALWAYS,10,80,680,540,w,(HMENU)(INT_PTR)IDC_LIST,app_instance,NULL);
   ListView_SetExtendedListViewStyle(photo_list,LVS_EX_DOUBLEBUFFER|LVS_EX_LABELTIP);
   thumbnail_list=ImageList_Create(96,96,ILC_COLOR32|ILC_MASK,64,64);ListView_SetImageList(photo_list,thumbnail_list,LVSIL_NORMAL);
   WNDCLASSW pc={0};pc.lpfnWndProc=preview_proc;pc.hInstance=app_instance;pc.lpszClassName=PREVIEW_CLASS;pc.hbrBackground=(HBRUSH)GetStockObject(BLACK_BRUSH);RegisterClassW(&pc);
