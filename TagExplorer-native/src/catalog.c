@@ -26,6 +26,19 @@ int catalog_add(const wchar_t *path){
  char *p=to_utf8(path);if(!p)return 0;sqlite3_stmt *s=NULL;int ok=sqlite3_prepare_v2(db,"INSERT OR IGNORE INTO Images(Path) VALUES(?1)",-1,&s,NULL)==SQLITE_OK;
  if(ok){sqlite3_bind_text(s,1,p,-1,SQLITE_TRANSIENT);ok=sqlite3_step(s)==SQLITE_DONE;}sqlite3_finalize(s);free(p);return ok;
 }
+int catalog_rename(const wchar_t *old_path,const wchar_t *new_path){
+ char *oldp=to_utf8(old_path),*newp=to_utf8(new_path);if(!oldp||!newp){free(oldp);free(newp);return 0;}
+ sqlite3_stmt *s=NULL;int ok=sqlite3_prepare_v2(db,"BEGIN IMMEDIATE; UPDATE Images SET Path=?1 WHERE Path=?2 COLLATE NOCASE; UPDATE PhotoTags SET PhotoPath=?1 WHERE PhotoPath=?2 COLLATE NOCASE;",-1,&s,NULL)==SQLITE_OK;
+ if(s)sqlite3_finalize(s);
+ if(ok){
+  ok=sqlite3_prepare_v2(db,"UPDATE Images SET Path=?1 WHERE Path=?2 COLLATE NOCASE",-1,&s,NULL)==SQLITE_OK;
+  if(ok){sqlite3_bind_text(s,1,newp,-1,SQLITE_TRANSIENT);sqlite3_bind_text(s,2,oldp,-1,SQLITE_TRANSIENT);ok=sqlite3_step(s)==SQLITE_DONE;}sqlite3_finalize(s);s=NULL;
+  if(ok){ok=sqlite3_prepare_v2(db,"UPDATE PhotoTags SET PhotoPath=?1 WHERE PhotoPath=?2 COLLATE NOCASE",-1,&s,NULL)==SQLITE_OK;
+   if(ok){sqlite3_bind_text(s,1,newp,-1,SQLITE_TRANSIENT);sqlite3_bind_text(s,2,oldp,-1,SQLITE_TRANSIENT);ok=sqlite3_step(s)==SQLITE_DONE;}sqlite3_finalize(s);}
+  sqlite3_exec(db,ok?"COMMIT":"ROLLBACK",NULL,NULL,NULL);
+ }
+ free(oldp);free(newp);return ok;
+}
 static int supported(const wchar_t *p){const wchar_t *e=PathFindExtensionW(p);return !_wcsicmp(e,L".jpg")||!_wcsicmp(e,L".jpeg")||!_wcsicmp(e,L".png")||!_wcsicmp(e,L".bmp")||!_wcsicmp(e,L".gif")||!_wcsicmp(e,L".tif")||!_wcsicmp(e,L".tiff")||!_wcsicmp(e,L".ico")||!_wcsicmp(e,L".wdp")||!_wcsicmp(e,L".heic")||!_wcsicmp(e,L".webp");}
 static int walk(const wchar_t *folder,int depth){
  if(depth>64)return 0;wchar_t pattern[MAX_PATH];lstrcpynW(pattern,folder,MAX_PATH);PathAppendW(pattern,L"*");WIN32_FIND_DATAW fd;HANDLE h=FindFirstFileW(pattern,&fd);if(h==INVALID_HANDLE_VALUE)return 0;int n=0;
