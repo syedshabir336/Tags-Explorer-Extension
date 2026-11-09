@@ -46,7 +46,8 @@
 #define ID_VIEW_PREVIOUS 1208
 #define ID_VIEW_NEXT 1209
 #define WM_APP_ROTATE_COMPLETE (WM_APP+41)
-static HWND viewer_tags_edit;
+static HWND viewer_tags_edit,viewer_window;
+static HACCEL viewer_accel;
 static int viewer_rotation_busy;
 typedef struct { HWND window; wchar_t path[MAX_PATH]; int degrees; HRESULT result; } RotateJob;
 static DWORD WINAPI rotate_worker(LPVOID parameter){
@@ -79,11 +80,47 @@ static HWND make_button(HWND parent,const wchar_t *text,int id,int x,int y,int w
  HWND b=CreateWindowExW(0,L"BUTTON",text,WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW,x,y,w,h,parent,(HMENU)(INT_PTR)id,app_instance,NULL);
  SendMessageW(b,WM_SETFONT,(WPARAM)font_ui,TRUE);SetWindowTheme(b,L"Explorer",NULL);return b;
 }
+static void add_tag_list_entry(const wchar_t *filter,const wchar_t *label){
+ wchar_t **next=(wchar_t**)realloc(tag_names,(size_t)(tag_name_count+1)*sizeof(wchar_t*));
+ if(!next)return;tag_names=next;tag_names[tag_name_count]=_wcsdup(filter);
+ if(!tag_names[tag_name_count])return;
+ SendMessageW(tag_list,LB_ADDSTRING,0,(LPARAM)label);tag_name_count++;
+}
+static int tag_is_month_key(const wchar_t *tag){
+ return tag&&wcsncmp(tag,L"Month: ",7)==0&&wcslen(tag)==14&&tag[11]==L'-'&&
+  tag[7]>=L'0'&&tag[7]<=L'9'&&tag[8]>=L'0'&&tag[8]<=L'9'&&
+  tag[9]>=L'0'&&tag[9]<=L'9'&&tag[10]>=L'0'&&tag[10]<=L'9'&&
+  tag[12]>=L'0'&&tag[12]<=L'9'&&tag[13]>=L'0'&&tag[13]<=L'9';
+}
 static void refresh_tag_list(void){
+ static const wchar_t *months[]={L"January",L"February",L"March",L"April",L"May",L"June",L"July",L"August",L"September",L"October",L"November",L"December"};
  if(tag_names){for(int i=0;i<tag_name_count;i++)free(tag_names[i]);free(tag_names);tag_names=NULL;tag_name_count=0;}
  SendMessageW(tag_list,LB_RESETCONTENT,0,0);SendMessageW(tag_list,LB_ADDSTRING,0,(LPARAM)L"All tags");
- if(catalog_list_tags(&tag_names,&tag_name_count)){for(int i=0;i<tag_name_count;i++)SendMessageW(tag_list,LB_ADDSTRING,0,(LPARAM)tag_names[i]);}
- int selected=0;if(active_tag[0])for(int i=0;i<tag_name_count;i++)if(!_wcsicmp(active_tag,tag_names[i])){selected=i+1;break;}SendMessageW(tag_list,LB_SETCURSEL,selected,0);
+ wchar_t **db_names=NULL;int db_count=0;
+ if(catalog_list_tags(&db_names,&db_count)){
+  /* Each year is a selectable parent; its month entries carry that year in
+     their database key, so equal month names from different years never merge. */
+  for(int i=0;i<db_count;i++)if(wcsncmp(db_names[i],L"Year: ",6)==0&&wcslen(db_names[i])==10){
+   wchar_t year[5],label[16];memcpy(year,db_names[i]+6,4*sizeof(wchar_t));year[4]=0;
+   swprintf(label,16,L"%s",year);add_tag_list_entry(db_names[i],label);
+   for(int m=1;m<=12;m++){
+    wchar_t key[32],child[48];swprintf(key,32,L"Month: %s-%02d",year,m);
+    int found=0;for(int j=0;j<db_count;j++)if(!_wcsicmp(db_names[j],key)){found=1;break;}
+    if(found){swprintf(child,48,L"    %s",months[m-1]);add_tag_list_entry(key,child);}
+   }
+  }
+  for(int i=0;i<db_count;i++){
+   const wchar_t *tag=db_names[i];
+   if(wcsncmp(tag,L"Year: ",6)==0&&wcslen(tag)==10)continue;
+   if(tag_is_month_key(tag))continue;
+   if(wcsncmp(tag,L"Month: ",7)==0){
+    wchar_t label[96];swprintf(label,96,L"    %s (year not set)",tag+7);add_tag_list_entry(tag,label);
+   }else add_tag_list_entry(tag,tag);
+  }
+  for(int i=0;i<db_count;i++)free(db_names[i]);free(db_names);
+ }
+ int selected=0;if(active_tag[0])for(int i=0;i<tag_name_count;i++)if(!_wcsicmp(active_tag,tag_names[i])){selected=i+1;break;}
+ SendMessageW(tag_list,LB_SETCURSEL,selected,0);
 }
 static void refresh_catalog(void){
  free_results();ListView_DeleteAllItems(photo_list);ImageList_RemoveAll(thumbnail_list);
@@ -205,21 +242,29 @@ static void viewer_apply_date_tag(const wchar_t *tag){
   wchar_t message[128];swprintf(message,128,L"Applied %s to this photo",tag);set_status(message);
  }else set_status(L"Could not apply the date tag to this photo.");
 }
-static void viewer_choose_month_tag(HWND owner){
+static int prompt_tag_year(HWND owner,wchar_t *year,size_t capacity){
+ SYSTEMTIME now;GetLocalTime(&now);swprintf(year,capacity,L"%04u",now.wYear);
+ if(!prompt_value(owner,L"Choose year",L"Enter the year for this month:",year,year,capacity))return 0;
+ if(wcslen(year)!=4||year[0]<L'0'||year[0]>L'9'||year[1]<L'0'||year[1]>L'9'||year[2]<L'0'||year[2]>L'9'||year[3]<L'0'||year[3]>L'9'){
+  MessageBoxW(owner,L"Enter a valid four-digit year, such as 2026.",L"Year tag",MB_ICONWARNING);return 0;
+ }
+ return 1;
+}
+static int choose_month_number(HWND owner,int button_id){
  static const wchar_t *months[]={L"January",L"February",L"March",L"April",L"May",L"June",L"July",L"August",L"September",L"October",L"November",L"December"};
- HMENU menu=CreatePopupMenu();if(!menu)return;
+ HMENU menu=CreatePopupMenu();if(!menu)return 0;
  for(int i=0;i<12;i++)AppendMenuW(menu,MF_STRING,ID_MONTH_FIRST+i,months[i]);
- RECT rc;GetWindowRect(GetDlgItem(owner,ID_VIEW_MONTH_TAG),&rc);
+ RECT rc;GetWindowRect(GetDlgItem(owner,button_id),&rc);
  int selected=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_LEFTALIGN|TPM_TOPALIGN,rc.left,rc.bottom,0,owner,NULL);
- DestroyMenu(menu);
- if(selected>=ID_MONTH_FIRST&&selected<ID_MONTH_FIRST+12){wchar_t tag[64];swprintf(tag,64,L"Month: %s",months[selected-ID_MONTH_FIRST]);viewer_apply_date_tag(tag);}
+ DestroyMenu(menu);return selected>=ID_MONTH_FIRST&&selected<ID_MONTH_FIRST+12?selected-ID_MONTH_FIRST+1:0;
+}
+static void viewer_choose_month_tag(HWND owner){
+ wchar_t year[16],tag[64];if(!prompt_tag_year(owner,year,16))return;
+ int month=choose_month_number(owner,ID_VIEW_MONTH_TAG);if(!month)return;
+ swprintf(tag,64,L"Year: %s, Month: %s-%02d",year,year,month);viewer_apply_date_tag(tag);
 }
 static void viewer_enter_year_tag(HWND owner){
- wchar_t year[16]=L"2026",tag[64];
- if(!prompt_value(owner,L"Add year tag",L"Enter a four-digit year:",L"2026",year,16))return;
- if(wcslen(year)!=4||year[0]<L'0'||year[0]>L'9'||year[1]<L'0'||year[1]>L'9'||year[2]<L'0'||year[2]>L'9'||year[3]<L'0'||year[3]>L'9'){
-  MessageBoxW(owner,L"Enter a valid four-digit year, such as 2026.",L"Year tag",MB_ICONWARNING);return;
- }
+ wchar_t year[16],tag[64];if(!prompt_tag_year(owner,year,16))return;
  swprintf(tag,64,L"Year: %s",year);viewer_apply_date_tag(tag);
 }
 static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
@@ -266,8 +311,8 @@ static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
    case ID_VIEW_PREVIOUS:if(photo_count){viewer_index=(viewer_index+photo_count-1)%photo_count;viewer_rotation=0;SetWindowTextW(w,PathFindFileNameW(photo_paths[viewer_index]));InvalidateRect(w,NULL,TRUE);}SetFocus(w);return 0;
    case ID_VIEW_NEXT:if(photo_count){viewer_index=(viewer_index+1)%photo_count;viewer_rotation=0;SetWindowTextW(w,PathFindFileNameW(photo_paths[viewer_index]));InvalidateRect(w,NULL,TRUE);}SetFocus(w);return 0;
    case ID_VIEW_RENAME:viewer_rename(w);SetFocus(w);return 0;
-   case ID_VIEW_MONTH_TAG:viewer_choose_month_tag(w);return 0;
-   case ID_VIEW_YEAR_TAG:viewer_enter_year_tag(w);return 0;
+   case ID_VIEW_MONTH_TAG:viewer_choose_month_tag(w);SetFocus(w);return 0;
+   case ID_VIEW_YEAR_TAG:viewer_enter_year_tag(w);SetFocus(w);return 0;
    case ID_VIEW_APPLY_TAGS:{wchar_t tags[512];GetWindowTextW(viewer_tags_edit,tags,512);if(tags[0]&&catalog_apply_tags(photo_paths[viewer_index],tags)){SetWindowTextW(viewer_tags_edit,L"");set_status(L"Tags added to this photo.");}else set_status(L"Enter one or more comma-separated tags.");return 0;}
   }break;
  case WM_KEYDOWN:
@@ -279,6 +324,7 @@ static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   RotateJob *job=(RotateJob*)lp;viewer_rotation_busy=0;
   EnableWindow(GetDlgItem(w,ID_VIEW_ROTATE_LEFT),TRUE);EnableWindow(GetDlgItem(w,ID_VIEW_ROTATE_RIGHT),TRUE);
   if(SUCCEEDED(job->result)){
+   image_invalidate_cache(job->path);
    if(viewer_index>=0&&viewer_index<photo_count&&!_wcsicmp(photo_paths[viewer_index],job->path)){viewer_rotation=0;InvalidateRect(w,NULL,TRUE);}
    set_status(L"Rotation saved to the original image file.");
   }else{
@@ -287,7 +333,7 @@ static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   }
   free(job);SetFocus(w);return 0;
  }
- case WM_DESTROY:InterlockedExchange(&viewer_rotation_busy,0);if(main_window&&IsWindow(main_window))refresh_catalog();return 0;
+ case WM_DESTROY:if(viewer_window==w)viewer_window=NULL;InterlockedExchange(&viewer_rotation_busy,0);image_invalidate_cache(NULL);if(main_window&&IsWindow(main_window))refresh_catalog();return 0;
  case WM_PAINT:{PAINTSTRUCT ps;HDC dc=BeginPaint(w,&ps);RECT rc;GetClientRect(w,&rc);FillRect(dc,&rc,(HBRUSH)GetStockObject(BLACK_BRUSH));rc.top+=58;if(photo_count)image_draw(dc,&rc,photo_paths[viewer_index],viewer_rotation);EndPaint(w,&ps);return 0;}
  }return DefWindowProcW(w,msg,wp,lp);
 }
@@ -295,7 +341,7 @@ static void show_viewer(void){
  int i=ListView_GetNextItem(photo_list,-1,LVNI_SELECTED);if(i<0)return;
  WNDCLASSW wc={0};wc.lpfnWndProc=viewer_proc;wc.hInstance=app_instance;wc.lpszClassName=VIEWER_CLASS;wc.hCursor=LoadCursorW(NULL,IDC_ARROW);wc.hbrBackground=(HBRUSH)GetStockObject(BLACK_BRUSH);RegisterClassW(&wc);
  HWND v=CreateWindowExW(WS_EX_APPWINDOW,VIEWER_CLASS,PathFindFileNameW(photo_paths[i]),WS_OVERLAPPEDWINDOW|WS_VISIBLE,CW_USEDEFAULT,CW_USEDEFAULT,1100,760,main_window,NULL,app_instance,NULL);
- viewer_index=i;viewer_rotation=0;ShowWindow(v,SW_MAXIMIZE);SetFocus(v);
+ viewer_window=v;viewer_index=i;viewer_rotation=0;ShowWindow(v,SW_MAXIMIZE);SetFocus(v);
 }
 static void layout_children(int width,int height){
  int content=width-SIDEBAR_W;if(content<360)content=360;
@@ -316,20 +362,12 @@ static void apply_tag_to_selected(const wchar_t *tag){
  wchar_t message[128];swprintf(message,128,L"Applied %s to %d photo(s)",tag,count);set_status(message);
 }
 static void choose_month_tag(HWND owner){
- static const wchar_t *months[]={L"January",L"February",L"March",L"April",L"May",L"June",L"July",L"August",L"September",L"October",L"November",L"December"};
- HMENU menu=CreatePopupMenu();if(!menu)return;
- for(int i=0;i<12;i++)AppendMenuW(menu,MF_STRING,ID_MONTH_FIRST+i,months[i]);
- RECT rc;HWND b=GetDlgItem(owner,ID_MONTH_TAG);GetWindowRect(b,&rc);
- int selected=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_LEFTALIGN|TPM_TOPALIGN,rc.left,rc.bottom,0,owner,NULL);
- DestroyMenu(menu);
- if(selected>=ID_MONTH_FIRST&&selected<ID_MONTH_FIRST+12){wchar_t tag[64];swprintf(tag,64,L"Month: %s",months[selected-ID_MONTH_FIRST]);apply_tag_to_selected(tag);}
+ wchar_t year[16],tag[64];if(!prompt_tag_year(owner,year,16))return;
+ int month=choose_month_number(owner,ID_MONTH_TAG);if(!month)return;
+ swprintf(tag,64,L"Year: %s, Month: %s-%02d",year,year,month);apply_tag_to_selected(tag);
 }
 static void enter_year_tag(HWND owner){
- wchar_t year[16]=L"2026",tag[64];
- if(!prompt_value(owner,L"Add year tag",L"Enter a four-digit year:",L"2026",year,16))return;
- if(wcslen(year)!=4||year[0]<L'0'||year[0]>L'9'||year[1]<L'0'||year[1]>L'9'||year[2]<L'0'||year[2]>L'9'||year[3]<L'0'||year[3]>L'9'){
-  MessageBoxW(owner,L"Enter a valid four-digit year, such as 2026.",L"Year tag",MB_ICONWARNING);return;
- }
+ wchar_t year[16],tag[64];if(!prompt_tag_year(owner,year,16))return;
  swprintf(tag,64,L"Year: %s",year);apply_tag_to_selected(tag);
 }
 static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
@@ -403,5 +441,11 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR command_line,int
  INITCOMMONCONTROLSEX cc={sizeof(cc),ICC_LISTVIEW_CLASSES};InitCommonControlsEx(&cc);
  WNDCLASSW wc={0};wc.lpfnWndProc=main_proc;wc.hInstance=instance;wc.lpszClassName=MAIN_CLASS;wc.hCursor=LoadCursorW(NULL,IDC_ARROW);wc.hbrBackground=(HBRUSH)GetStockObject(BLACK_BRUSH);RegisterClassW(&wc);
  HWND w=CreateWindowExW(0,MAIN_CLASS,L"Tag Explorer",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1450,920,NULL,NULL,instance,NULL);
- ShowWindow(w,show);UpdateWindow(w);MSG m;while(GetMessageW(&m,NULL,0,0)>0){TranslateMessage(&m);DispatchMessageW(&m);}CoUninitialize();return (int)m.wParam;
+ ACCEL keys[]={{FVIRTKEY,VK_LEFT,ID_VIEW_PREVIOUS},{FVIRTKEY,VK_RIGHT,ID_VIEW_NEXT}};
+ viewer_accel=CreateAcceleratorTableW(keys,2);
+ ShowWindow(w,show);UpdateWindow(w);MSG m;while(GetMessageW(&m,NULL,0,0)>0){
+  if(viewer_window&&IsWindow(viewer_window)&&GetActiveWindow()==viewer_window&&GetFocus()!=viewer_tags_edit&&viewer_accel&&TranslateAcceleratorW(viewer_window,viewer_accel,&m))continue;
+  TranslateMessage(&m);DispatchMessageW(&m);
+ }
+ if(viewer_accel)DestroyAcceleratorTable(viewer_accel);CoUninitialize();return (int)m.wParam;
 }
