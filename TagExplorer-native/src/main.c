@@ -11,6 +11,7 @@
 #include "resource.h"
 #include "catalog.h"
 #include "images.h"
+#include "icons.h"
 
 #define MAIN_CLASS L"TagExplorerNativeMain"
 #define VIEWER_CLASS L"TagExplorerNativeViewer"
@@ -58,7 +59,7 @@ static HWND make_label(HWND parent,const wchar_t *text,int x,int y,int w,int h,H
  SendMessageW(hnd,WM_SETFONT,(WPARAM)font,TRUE);SetPropW(hnd,L"TagExplorerTextColor",(HANDLE)(ULONG_PTR)(color+1));return hnd;
 }
 static HWND make_button(HWND parent,const wchar_t *text,int id,int x,int y,int w,int h){
- HWND b=CreateWindowExW(0,L"BUTTON",text,WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,x,y,w,h,parent,(HMENU)(INT_PTR)id,app_instance,NULL);
+ HWND b=CreateWindowExW(0,L"BUTTON",text,WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW,x,y,w,h,parent,(HMENU)(INT_PTR)id,app_instance,NULL);
  SendMessageW(b,WM_SETFONT,(WPARAM)font_ui,TRUE);SetWindowTheme(b,L"Explorer",NULL);return b;
 }
 static void refresh_tag_list(void){
@@ -231,8 +232,8 @@ static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   sidebar=NULL;
   brand_label=make_label(w,L"◉  TAG EXPLORER",24,22,225,34,font_title,fg_main);
   source_heading=make_label(w,L"LIBRARY",24,92,220,20,font_small,fg_muted);
-  make_button(w,L"+  Add folder",ID_ADD_FOLDER,20,122,238,38);
-  make_button(w,L"+  Add photos",ID_ADD_FILES,20,168,238,38);
+  make_button(w,L"Add folder",ID_ADD_FOLDER,20,122,238,38);
+  make_button(w,L"Add photos",ID_ADD_FILES,20,168,238,38);
   make_label(w,L"SOURCES",24,232,220,20,font_small,fg_muted);
   source_list=CreateWindowExW(0,L"LISTBOX",L"",WS_CHILD|WS_VISIBLE|LBS_NOTIFY|LBS_NOINTEGRALHEIGHT|WS_VSCROLL,18,260,242,126,w,(HMENU)(INT_PTR)ID_SOURCE_LIST,app_instance,NULL);
   SendMessageW(source_list,WM_SETFONT,(WPARAM)font_ui,TRUE);MoveWindow(source_list,18,260,242,126,TRUE);SendMessageW(source_list,LB_ADDSTRING,0,(LPARAM)L"  All photos");
@@ -280,11 +281,11 @@ static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
  case WM_CTLCOLOREDIT:{HDC dc=(HDC)wp;SetTextColor(dc,fg_main);SetBkColor(dc,bg_input);return (LRESULT)GetStockObject(DKGRAY_BRUSH);}
  case WM_CTLCOLORLISTBOX:{HDC dc=(HDC)wp;SetTextColor(dc,fg_main);SetBkColor(dc,bg_panel);return (LRESULT)GetStockObject(DKGRAY_BRUSH);}
  case WM_ERASEBKGND:{RECT rc;GetClientRect(w,&rc);HBRUSH base=CreateSolidBrush(bg_main);FillRect((HDC)wp,&rc,base);DeleteObject(base);RECT side={0,0,SIDEBAR_W,rc.bottom};HBRUSH panel=CreateSolidBrush(bg_panel);FillRect((HDC)wp,&side,panel);DeleteObject(panel);return 1;}
- case WM_DESTROY:free_results();if(tag_names){for(int i=0;i<tag_name_count;i++)free(tag_names[i]);free(tag_names);}if(thumbnail_list)ImageList_Destroy(thumbnail_list);catalog_close();if(font_ui)DeleteObject(font_ui);if(font_small)DeleteObject(font_small);if(font_title)DeleteObject(font_title);PostQuitMessage(0);return 0;
+ case WM_DESTROY:free_results();if(tag_names){for(int i=0;i<tag_name_count;i++)free(tag_names[i]);free(tag_names);}if(thumbnail_list)ImageList_Destroy(thumbnail_list);catalog_close();if(font_ui)DeleteObject(font_ui);if(font_small)DeleteObject(font_small);if(font_title)DeleteObject(font_title);icons_shutdown();PostQuitMessage(0);return 0;
  }return DefWindowProcW(w,msg,wp,lp);
 }
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR command_line,int show){
- (void)previous;(void)command_line;app_instance=instance;CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);
+ (void)previous;(void)command_line;app_instance=instance;icons_init();CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);
  INITCOMMONCONTROLSEX cc={sizeof(cc),ICC_LISTVIEW_CLASSES};InitCommonControlsEx(&cc);
  WNDCLASSW wc={0};wc.lpfnWndProc=main_proc;wc.hInstance=instance;wc.lpszClassName=MAIN_CLASS;wc.hCursor=LoadCursorW(NULL,IDC_ARROW);wc.hbrBackground=(HBRUSH)GetStockObject(BLACK_BRUSH);RegisterClassW(&wc);
  HWND w=CreateWindowExW(0,MAIN_CLASS,L"Tag Explorer",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1450,920,NULL,NULL,instance,NULL);
