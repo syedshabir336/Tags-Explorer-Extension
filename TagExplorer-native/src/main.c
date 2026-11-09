@@ -134,6 +134,7 @@ static wchar_t rename_input[MAX_PATH];
 static HWND rename_edit;
 static LRESULT CALLBACK rename_prompt_proc(HWND d,UINT msg,WPARAM wp,LPARAM lp){
  switch(msg){
+ case WM_DRAWITEM:icons_draw_button((DRAWITEMSTRUCT*)lp);return TRUE;
  case WM_CREATE:{
   CreateWindowExW(0,L"STATIC",L"New file name (the original image will be renamed in place):",WS_CHILD|WS_VISIBLE,16,16,390,22,d,NULL,app_instance,NULL);
   rename_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",rename_input,WS_CHILD|WS_VISIBLE|WS_TABSTOP|ES_AUTOHSCROLL,16,44,390,28,d,(HMENU)(INT_PTR)ID_RENAME_EDIT,app_instance,NULL);
@@ -179,6 +180,7 @@ static void viewer_rename(HWND w){
 }
 static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
  switch(msg){
+ case WM_DRAWITEM:icons_draw_button((DRAWITEMSTRUCT*)lp);return TRUE;
  case WM_CREATE:
   make_button(w,L"Rotate left",ID_VIEW_ROTATE_LEFT,16,12,104,34);
   make_button(w,L"Rotate right",ID_VIEW_ROTATE_RIGHT,128,12,110,34);
@@ -225,6 +227,7 @@ static void layout_children(int width,int height){
 }
 static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
  switch(msg){
+ case WM_DRAWITEM:icons_draw_button((DRAWITEMSTRUCT*)lp);return TRUE;
  case WM_CREATE:{
   main_window=w;font_ui=CreateFontW(-14,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Segoe UI");
   font_small=CreateFontW(-12,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Segoe UI");
