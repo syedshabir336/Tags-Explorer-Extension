@@ -233,7 +233,7 @@ static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   MoveWindow(GetDlgItem(w,ID_VIEW_RENAME),248,12,86,34,TRUE);
   MoveWindow(GetDlgItem(w,ID_VIEW_MONTH_TAG),344,12,100,34,TRUE);
   MoveWindow(GetDlgItem(w,ID_VIEW_YEAR_TAG),452,12,90,34,TRUE);
-  MoveWindow(viewer_tags_edit,550,12,width-650>150?width-650:150,34,TRUE);
+  MoveWindow(viewer_tags_edit,550,12,width-838>100?width-838:100,34,TRUE);
   MoveWindow(GetDlgItem(w,ID_VIEW_APPLY_TAGS),width-276,12,88,34,TRUE);
   MoveWindow(GetDlgItem(w,ID_VIEW_PREVIOUS),width-180,12,82,34,TRUE);
   MoveWindow(GetDlgItem(w,ID_VIEW_NEXT),width-90,12,74,34,TRUE);return 0;}
