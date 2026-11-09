@@ -29,6 +29,12 @@
 #define ID_LIST 1110
 #define ID_STATUS 1111
 #define ID_TAGS_HEADER 1112
+#define ID_VIEW_ROTATE_LEFT 1201
+#define ID_VIEW_ROTATE_RIGHT 1202
+#define ID_VIEW_RENAME 1203
+#define ID_VIEW_TAGS 1204
+#define ID_VIEW_APPLY_TAGS 1205
+static HWND viewer_tags_edit;
 
 static HINSTANCE app_instance;
 static HWND main_window,sidebar,source_list,search_edit,tag_edit,photo_list,status_text;
@@ -101,14 +107,51 @@ static void open_viewer(int index){
  if(index<0||index>=photo_count)return;viewer_index=index;viewer_rotation=0;
  WNDCLASSW wc={0};wc.lpfnWndProc=NULL;wc.hInstance=app_instance;wc.lpszClassName=VIEWER_CLASS;
 }
+static void viewer_rename(HWND w){
+ if(viewer_index<0||viewer_index>=photo_count)return;
+ wchar_t target[MAX_PATH];lstrcpynW(target,PathFindFileNameW(photo_paths[viewer_index]),MAX_PATH);
+ OPENFILENAMEW ofn={0};ofn.lStructSize=sizeof(ofn);ofn.hwndOwner=w;ofn.lpstrFile=target;ofn.nMaxFile=MAX_PATH;
+ ofn.lpstrInitialDir=photo_paths[viewer_index];PathRemoveFileSpecW((wchar_t*)ofn.lpstrInitialDir);
+ ofn.lpstrFilter=L"Image files\\0*.jpg;*.jpeg;*.png;*.bmp;*.gif;*.tif;*.tiff;*.webp;*.heic\\0All files\\0*.*\\0";
+ ofn.Flags=OFN_EXPLORER|OFN_PATHMUSTEXIST|OFN_NOCHANGEDIR;
+ if(!GetSaveFileNameW(&ofn))return;
+ if(!_wcsicmp(target,photo_paths[viewer_index]))return;
+ if(GetFileAttributesW(target)!=INVALID_FILE_ATTRIBUTES){MessageBoxW(w,L"A file with that name already exists.",L"Rename photo",MB_ICONWARNING);return;}
+ wchar_t old[MAX_PATH];lstrcpynW(old,photo_paths[viewer_index],MAX_PATH);
+ if(!MoveFileW(old,target)){MessageBoxW(w,L"Windows could not rename this photo.",L"Rename photo",MB_ICONERROR);return;}
+ if(!catalog_rename(old,target)){MoveFileW(target,old);MessageBoxW(w,L"The catalog could not update the renamed photo.",L"Rename photo",MB_ICONERROR);return;}
+ free(photo_paths[viewer_index]);photo_paths[viewer_index]=_wcsdup(target);
+ SetWindowTextW(w,PathFindFileNameW(target));set_status(L"Photo renamed.");InvalidateRect(w,NULL,TRUE);
+}
 static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
  switch(msg){
+ case WM_CREATE:
+  make_button(w,L"Rotate left",ID_VIEW_ROTATE_LEFT,16,12,104,34);
+  make_button(w,L"Rotate right",ID_VIEW_ROTATE_RIGHT,128,12,110,34);
+  make_button(w,L"Rename",ID_VIEW_RENAME,248,12,86,34);
+  viewer_tags_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL,350,12,260,34,w,(HMENU)(INT_PTR)ID_VIEW_TAGS,app_instance,NULL);
+  SendMessageW(viewer_tags_edit,WM_SETFONT,(WPARAM)font_ui,TRUE);
+  make_button(w,L"Add tags",ID_VIEW_APPLY_TAGS,620,12,96,34);
+  return 0;
+ case WM_SIZE:{
+  int width=LOWORD(lp);MoveWindow(GetDlgItem(w,ID_VIEW_ROTATE_LEFT),16,12,104,34,TRUE);
+  MoveWindow(GetDlgItem(w,ID_VIEW_ROTATE_RIGHT),128,12,110,34,TRUE);
+  MoveWindow(GetDlgItem(w,ID_VIEW_RENAME),248,12,86,34,TRUE);
+  MoveWindow(viewer_tags_edit,350,12,width-462>180?width-462:180,34,TRUE);
+  MoveWindow(GetDlgItem(w,ID_VIEW_APPLY_TAGS),width-96,12,80,34,TRUE);return 0;}
+ case WM_COMMAND:
+  switch(LOWORD(wp)){
+   case ID_VIEW_ROTATE_LEFT:viewer_rotation=(viewer_rotation+270)%360;InvalidateRect(w,NULL,TRUE);return 0;
+   case ID_VIEW_ROTATE_RIGHT:viewer_rotation=(viewer_rotation+90)%360;InvalidateRect(w,NULL,TRUE);return 0;
+   case ID_VIEW_RENAME:viewer_rename(w);return 0;
+   case ID_VIEW_APPLY_TAGS:{wchar_t tags[512];GetWindowTextW(viewer_tags_edit,tags,512);if(tags[0]&&catalog_apply_tags(photo_paths[viewer_index],tags)){SetWindowTextW(viewer_tags_edit,L"");set_status(L"Tags added to this photo.");}else set_status(L"Enter one or more comma-separated tags.");return 0;}
+  }break;
  case WM_KEYDOWN:
   if(wp==VK_ESCAPE){DestroyWindow(w);return 0;}
   if(wp==VK_RIGHT&&photo_count){viewer_index=(viewer_index+1)%photo_count;viewer_rotation=0;SetWindowTextW(w,PathFindFileNameW(photo_paths[viewer_index]));InvalidateRect(w,NULL,TRUE);}
   if(wp==VK_LEFT&&photo_count){viewer_index=(viewer_index+photo_count-1)%photo_count;viewer_rotation=0;SetWindowTextW(w,PathFindFileNameW(photo_paths[viewer_index]));InvalidateRect(w,NULL,TRUE);}
   if(wp=='R'){viewer_rotation=(viewer_rotation+90)%360;InvalidateRect(w,NULL,TRUE);}return 0;
- case WM_PAINT:{PAINTSTRUCT ps;HDC dc=BeginPaint(w,&ps);RECT rc;GetClientRect(w,&rc);FillRect(dc,&rc,(HBRUSH)GetStockObject(BLACK_BRUSH));if(photo_count)image_draw(dc,&rc,photo_paths[viewer_index],viewer_rotation);EndPaint(w,&ps);return 0;}
+ case WM_PAINT:{PAINTSTRUCT ps;HDC dc=BeginPaint(w,&ps);RECT rc;GetClientRect(w,&rc);FillRect(dc,&rc,(HBRUSH)GetStockObject(BLACK_BRUSH));rc.top+=58;if(photo_count)image_draw(dc,&rc,photo_paths[viewer_index],viewer_rotation);EndPaint(w,&ps);return 0;}
  }return DefWindowProcW(w,msg,wp,lp);
 }
 static void show_viewer(void){
