@@ -41,6 +41,8 @@
 #define ID_VIEW_RENAME 1203
 #define ID_VIEW_TAGS 1204
 #define ID_VIEW_APPLY_TAGS 1205
+#define ID_VIEW_MONTH_TAG 1206
+#define ID_VIEW_YEAR_TAG 1207
 static HWND viewer_tags_edit;
 
 static HINSTANCE app_instance;
@@ -185,6 +187,29 @@ static void viewer_rename(HWND w){
  free(photo_paths[viewer_index]);photo_paths[viewer_index]=_wcsdup(new_path);
  SetWindowTextW(w,PathFindFileNameW(new_path));set_status(L"Original image renamed in its existing folder.");InvalidateRect(w,NULL,TRUE);
 }
+static void viewer_apply_date_tag(const wchar_t *tag){
+ if(viewer_index<0||viewer_index>=photo_count)return;
+ if(catalog_apply_tags(photo_paths[viewer_index],tag)){
+  wchar_t message[128];swprintf(message,128,L"Applied %s to this photo",tag);set_status(message);
+ }else set_status(L"Could not apply the date tag to this photo.");
+}
+static void viewer_choose_month_tag(HWND owner){
+ static const wchar_t *months[]={L"January",L"February",L"March",L"April",L"May",L"June",L"July",L"August",L"September",L"October",L"November",L"December"};
+ HMENU menu=CreatePopupMenu();if(!menu)return;
+ for(int i=0;i<12;i++)AppendMenuW(menu,MF_STRING,ID_MONTH_FIRST+i,months[i]);
+ RECT rc;GetWindowRect(GetDlgItem(owner,ID_VIEW_MONTH_TAG),&rc);
+ int selected=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_LEFTALIGN|TPM_TOPALIGN,rc.left,rc.bottom,0,owner,NULL);
+ DestroyMenu(menu);
+ if(selected>=ID_MONTH_FIRST&&selected<ID_MONTH_FIRST+12){wchar_t tag[64];swprintf(tag,64,L"Month: %s",months[selected-ID_MONTH_FIRST]);viewer_apply_date_tag(tag);}
+}
+static void viewer_enter_year_tag(HWND owner){
+ wchar_t year[16]=L"2026",tag[64];
+ if(!prompt_value(owner,L"Add year tag",L"Enter a four-digit year:",L"2026",year,16))return;
+ if(wcslen(year)!=4||year[0]<L'0'||year[0]>L'9'||year[1]<L'0'||year[1]>L'9'||year[2]<L'0'||year[2]>L'9'||year[3]<L'0'||year[3]>L'9'){
+  MessageBoxW(owner,L"Enter a valid four-digit year, such as 2026.",L"Year tag",MB_ICONWARNING);return;
+ }
+ swprintf(tag,64,L"Year: %s",year);viewer_apply_date_tag(tag);
+}
 static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
  switch(msg){
  case WM_DRAWITEM:icons_draw_button((DRAWITEMSTRUCT*)lp);return TRUE;
@@ -192,21 +217,27 @@ static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   make_button(w,L"Rotate left",ID_VIEW_ROTATE_LEFT,16,12,104,34);
   make_button(w,L"Rotate right",ID_VIEW_ROTATE_RIGHT,128,12,110,34);
   make_button(w,L"Rename",ID_VIEW_RENAME,248,12,86,34);
-  viewer_tags_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL,350,12,260,34,w,(HMENU)(INT_PTR)ID_VIEW_TAGS,app_instance,NULL);
+  make_button(w,L"Month tag",ID_VIEW_MONTH_TAG,344,12,100,34);
+  make_button(w,L"Year tag",ID_VIEW_YEAR_TAG,452,12,90,34);
+  viewer_tags_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL,550,12,260,34,w,(HMENU)(INT_PTR)ID_VIEW_TAGS,app_instance,NULL);
   SendMessageW(viewer_tags_edit,WM_SETFONT,(WPARAM)font_ui,TRUE);
-  make_button(w,L"Add tags",ID_VIEW_APPLY_TAGS,620,12,96,34);
+  make_button(w,L"Add tags",ID_VIEW_APPLY_TAGS,820,12,96,34);
   return 0;
  case WM_SIZE:{
   int width=LOWORD(lp);MoveWindow(GetDlgItem(w,ID_VIEW_ROTATE_LEFT),16,12,104,34,TRUE);
   MoveWindow(GetDlgItem(w,ID_VIEW_ROTATE_RIGHT),128,12,110,34,TRUE);
   MoveWindow(GetDlgItem(w,ID_VIEW_RENAME),248,12,86,34,TRUE);
-  MoveWindow(viewer_tags_edit,350,12,width-462>180?width-462:180,34,TRUE);
+  MoveWindow(GetDlgItem(w,ID_VIEW_MONTH_TAG),344,12,100,34,TRUE);
+  MoveWindow(GetDlgItem(w,ID_VIEW_YEAR_TAG),452,12,90,34,TRUE);
+  MoveWindow(viewer_tags_edit,550,12,width-650>150?width-650:150,34,TRUE);
   MoveWindow(GetDlgItem(w,ID_VIEW_APPLY_TAGS),width-96,12,80,34,TRUE);return 0;}
  case WM_COMMAND:
   switch(LOWORD(wp)){
    case ID_VIEW_ROTATE_LEFT:viewer_rotation=(viewer_rotation+270)%360;InvalidateRect(w,NULL,TRUE);return 0;
    case ID_VIEW_ROTATE_RIGHT:viewer_rotation=(viewer_rotation+90)%360;InvalidateRect(w,NULL,TRUE);return 0;
    case ID_VIEW_RENAME:viewer_rename(w);return 0;
+   case ID_VIEW_MONTH_TAG:viewer_choose_month_tag(w);return 0;
+   case ID_VIEW_YEAR_TAG:viewer_enter_year_tag(w);return 0;
    case ID_VIEW_APPLY_TAGS:{wchar_t tags[512];GetWindowTextW(viewer_tags_edit,tags,512);if(tags[0]&&catalog_apply_tags(photo_paths[viewer_index],tags)){SetWindowTextW(viewer_tags_edit,L"");set_status(L"Tags added to this photo.");}else set_status(L"Enter one or more comma-separated tags.");return 0;}
   }break;
  case WM_KEYDOWN:
