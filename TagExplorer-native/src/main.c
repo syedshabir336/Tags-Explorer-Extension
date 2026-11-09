@@ -271,6 +271,7 @@ static void viewer_enter_year_tag(HWND owner){
 static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
  switch(msg){
  case WM_DRAWITEM:icons_draw_button((DRAWITEMSTRUCT*)lp);return TRUE;
+ case WM_CTLCOLORSTATIC:{HDC dc=(HDC)wp;HWND ctl=(HWND)lp;SetBkMode(dc,TRANSPARENT);HANDLE c=GetPropW(ctl,L"TagExplorerTextColor");SetTextColor(dc,c?(COLORREF)((ULONG_PTR)c-1):fg_main);return (LRESULT)GetStockObject(NULL_BRUSH);}
  case WM_CREATE:
   make_button(w,L"Rotate left",ID_VIEW_ROTATE_LEFT,16,12,104,34);
   make_button(w,L"Rotate right",ID_VIEW_ROTATE_RIGHT,128,12,110,34);
