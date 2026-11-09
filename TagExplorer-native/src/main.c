@@ -112,7 +112,7 @@ static void viewer_rename(HWND w){
  wchar_t target[MAX_PATH];lstrcpynW(target,PathFindFileNameW(photo_paths[viewer_index]),MAX_PATH);
  OPENFILENAMEW ofn={0};ofn.lStructSize=sizeof(ofn);ofn.hwndOwner=w;ofn.lpstrFile=target;ofn.nMaxFile=MAX_PATH;
  wchar_t initial_dir[MAX_PATH];lstrcpynW(initial_dir,photo_paths[viewer_index],MAX_PATH);PathRemoveFileSpecW(initial_dir);ofn.lpstrInitialDir=initial_dir;
- ofn.lpstrFilter=L"Image files\\0*.jpg;*.jpeg;*.png;*.bmp;*.gif;*.tif;*.tiff;*.webp;*.heic\\0All files\\0*.*\\0";
+ ofn.lpstrFilter=L"Image files\0*.jpg;*.jpeg;*.png;*.bmp;*.gif;*.tif;*.tiff;*.webp;*.heic\0All files\0*.*\0";
  ofn.Flags=OFN_EXPLORER|OFN_PATHMUSTEXIST|OFN_NOCHANGEDIR;
  if(!GetSaveFileNameW(&ofn))return;
  if(!_wcsicmp(target,photo_paths[viewer_index]))return;
