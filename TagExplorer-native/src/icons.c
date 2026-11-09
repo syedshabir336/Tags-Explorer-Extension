@@ -13,7 +13,7 @@
 
 enum { CMD_ADD_FOLDER=1102,CMD_ADD_FILES=1103,CMD_SEARCH=1105,CMD_REFRESH=1105,
  CMD_APPLY_TAGS=1107,CMD_OPEN=1108,CMD_SHELL=1109,CMD_NAVIGATE=1115,
- CMD_ROTATE_LEFT=1201,CMD_ROTATE_RIGHT=1202,CMD_RENAME=1203,CMD_VIEW_APPLY_TAGS=1205,
+ CMD_ROTATE_LEFT=1201,CMD_ROTATE_RIGHT=1202,CMD_RENAME=1203,CMD_VIEW_APPLY_TAGS=1205,CMD_VIEW_PREV=1208,CMD_VIEW_NEXT=1209,
  CMD_RENAME_OK=1302,CMD_RENAME_CANCEL=1303,CMD_SOURCE_LIST=1101,CMD_TAG_LIST=1113 };
 typedef struct { int id; const char *file; HICON icon; } IconEntry;
 static IconEntry g_icons[]={
@@ -23,7 +23,7 @@ static IconEntry g_icons[]={
  {CMD_OPEN,"external-link.svg",NULL},{CMD_SHELL,"folder.svg",NULL},
  {CMD_NAVIGATE,"arrow-right.svg",NULL},{CMD_ROTATE_LEFT,"rotate-2.svg",NULL},
  {CMD_ROTATE_RIGHT,"rotate-clockwise-2.svg",NULL},{CMD_RENAME,"edit.svg",NULL},
- {CMD_VIEW_APPLY_TAGS,"tag.svg",NULL},{CMD_RENAME_OK,"edit.svg",NULL},
+ {CMD_VIEW_APPLY_TAGS,"tag.svg",NULL},{CMD_VIEW_PREV,"arrow-left.svg",NULL},{CMD_VIEW_NEXT,"arrow-right.svg",NULL},{CMD_RENAME_OK,"edit.svg",NULL},
  {CMD_RENAME_CANCEL,"external-link.svg",NULL}
 };
 static char *replace_current_color(const char *src){
