@@ -6,7 +6,7 @@ A lightweight native Windows x64 photo catalog and tag manager. This implementat
 - C11 and Win32 common controls (no .NET, Electron, browser runtime, or bundled UI framework).
 - Windows Imaging Component (WIC) for image decoding and thumbnail pixels.
 - SQLite amalgamation, fetched at configure time and linked statically.
-- GDI for native rendering.
+- GDI for native rendering and owner-drawn icon buttons.\n- Tabler Icons (MIT) SVG assets, rasterized at startup with vendored NanoSVG; no browser or managed runtime.\n- Icons are shipped locally in `assets/icons`, so the UI works offline. See `assets/icons/THIRD_PARTY_NOTICES.txt` and `third_party/nanosvg/` for attribution.
 - CMake + MSVC on Windows.
 
 ## Current native milestone
