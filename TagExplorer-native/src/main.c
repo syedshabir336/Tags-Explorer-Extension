@@ -53,7 +53,7 @@ static DWORD WINAPI rotate_worker(LPVOID parameter){
  RotateJob *job=(RotateJob*)parameter; HRESULT com_hr=CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);
  job->result=FAILED(com_hr)?com_hr:image_rotate_file(job->path,job->degrees);
  if(SUCCEEDED(com_hr))CoUninitialize();
- if(!PostMessageW(job->window,WM_APP_ROTATE_COMPLETE,0,(LPARAM)job)) free(job);
+ if(!PostMessageW(job->window,WM_APP_ROTATE_COMPLETE,0,(LPARAM)job)){InterlockedExchange(&viewer_rotation_busy,0);free(job);}
  return 0;
 }
 
@@ -287,7 +287,7 @@ static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   }
   free(job);SetFocus(w);return 0;
  }
- case WM_DESTROY:if(main_window&&IsWindow(main_window))refresh_catalog();return 0;
+ case WM_DESTROY:InterlockedExchange(&viewer_rotation_busy,0);if(main_window&&IsWindow(main_window))refresh_catalog();return 0;
  case WM_PAINT:{PAINTSTRUCT ps;HDC dc=BeginPaint(w,&ps);RECT rc;GetClientRect(w,&rc);FillRect(dc,&rc,(HBRUSH)GetStockObject(BLACK_BRUSH));rc.top+=58;if(photo_count)image_draw(dc,&rc,photo_paths[viewer_index],viewer_rotation);EndPaint(w,&ps);return 0;}
  }return DefWindowProcW(w,msg,wp,lp);
 }
