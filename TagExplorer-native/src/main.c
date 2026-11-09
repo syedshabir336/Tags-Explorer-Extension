@@ -119,7 +119,7 @@ static void show_viewer(void){
 }
 static void layout_children(int width,int height){
  int content=width-SIDEBAR_W;if(content<360)content=360;
- MoveWindow(sidebar,0,0,SIDEBAR_W,height,TRUE);
+ /* Sidebar is painted by the main window background handler. */
  MoveWindow(title_label,SIDEBAR_W+28,15,420,28,TRUE);
  MoveWindow(subtitle_label,SIDEBAR_W+29,42,450,18,TRUE);
  MoveWindow(search_edit,width-390,18,250,32,TRUE);
@@ -132,7 +132,7 @@ static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   main_window=w;font_ui=CreateFontW(-14,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Segoe UI");
   font_small=CreateFontW(-12,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Segoe UI");
   font_title=CreateFontW(-23,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Segoe UI");
-  sidebar=CreateWindowExW(0,L"STATIC",L"",WS_CHILD|WS_VISIBLE|SS_BLACKRECT,0,0,SIDEBAR_W,700,w,NULL,app_instance,NULL);
+  sidebar=NULL;
   brand_label=make_label(w,L"◉  TAG EXPLORER",24,22,225,34,font_title,fg_main);
   source_heading=make_label(w,L"LIBRARY",24,92,220,20,font_small,fg_muted);
   make_button(w,L"+  Add folder",ID_ADD_FOLDER,20,122,238,38);
@@ -175,7 +175,7 @@ static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
  case WM_CTLCOLORSTATIC:{HDC dc=(HDC)wp;HWND ctl=(HWND)lp;SetBkMode(dc,TRANSPARENT);HANDLE c=GetPropW(ctl,L"TagExplorerTextColor");SetTextColor(dc,c?(COLORREF)((ULONG_PTR)c-1):fg_main);return (LRESULT)GetStockObject(NULL_BRUSH);}
  case WM_CTLCOLOREDIT:{HDC dc=(HDC)wp;SetTextColor(dc,fg_main);SetBkColor(dc,bg_input);return (LRESULT)GetStockObject(DKGRAY_BRUSH);}
  case WM_CTLCOLORLISTBOX:{HDC dc=(HDC)wp;SetTextColor(dc,fg_main);SetBkColor(dc,bg_panel);return (LRESULT)GetStockObject(DKGRAY_BRUSH);}
- case WM_ERASEBKGND:{RECT rc;GetClientRect(w,&rc);FillRect((HDC)wp,&rc,(HBRUSH)GetStockObject(BLACK_BRUSH));RECT side={0,0,SIDEBAR_W,rc.bottom};HBRUSH b=CreateSolidBrush(bg_panel);FillRect((HDC)wp,&side,b);DeleteObject(b);return 1;}
+ case WM_ERASEBKGND:{RECT rc;GetClientRect(w,&rc);HBRUSH base=CreateSolidBrush(bg_main);FillRect((HDC)wp,&rc,base);DeleteObject(base);RECT side={0,0,SIDEBAR_W,rc.bottom};HBRUSH panel=CreateSolidBrush(bg_panel);FillRect((HDC)wp,&side,panel);DeleteObject(panel);return 1;}
  case WM_DESTROY:free_results();if(thumbnail_list)ImageList_Destroy(thumbnail_list);catalog_close();if(font_ui)DeleteObject(font_ui);if(font_small)DeleteObject(font_small);if(font_title)DeleteObject(font_title);PostQuitMessage(0);return 0;
  }return DefWindowProcW(w,msg,wp,lp);
 }
