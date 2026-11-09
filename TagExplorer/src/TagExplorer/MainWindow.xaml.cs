@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using Button = System.Windows.Controls.Button;
 using TextBox = System.Windows.Controls.TextBox;
 using Orientation = System.Windows.Controls.Orientation;
