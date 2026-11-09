@@ -79,20 +79,20 @@ static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
  switch(msg){
  case WM_CREATE:{
   main_window=w;HFONT font=(HFONT)GetStockObject(DEFAULT_GUI_FONT);
-  path_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL,10,10,550,26,w,(HMENU)IDC_PATH,app_instance,NULL);
-  CreateWindowW(L"BUTTON",L"Folder",WS_CHILD|WS_VISIBLE|WS_TABSTOP,568,10,76,26,w,(HMENU)IDC_FOLDER,app_instance,NULL);
-  CreateWindowW(L"BUTTON",L"Add files",WS_CHILD|WS_VISIBLE|WS_TABSTOP,650,10,82,26,w,(HMENU)IDC_ADD,app_instance,NULL);
-  search_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL,10,44,360,26,w,(HMENU)IDC_SEARCH,app_instance,NULL);
-  CreateWindowW(L"BUTTON",L"Search",WS_CHILD|WS_VISIBLE|WS_TABSTOP,378,44,72,26,w,(HMENU)IDC_REFRESH,app_instance,NULL);
+  path_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL,10,10,550,26,w,(HMENU)(INT_PTR)IDC_PATH,app_instance,NULL);
+  CreateWindowW(L"BUTTON",L"Folder",WS_CHILD|WS_VISIBLE|WS_TABSTOP,568,10,76,26,w,(HMENU)(INT_PTR)IDC_FOLDER,app_instance,NULL);
+  CreateWindowW(L"BUTTON",L"Add files",WS_CHILD|WS_VISIBLE|WS_TABSTOP,650,10,82,26,w,(HMENU)(INT_PTR)IDC_ADD,app_instance,NULL);
+  search_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL,10,44,360,26,w,(HMENU)(INT_PTR)IDC_SEARCH,app_instance,NULL);
+  CreateWindowW(L"BUTTON",L"Search",WS_CHILD|WS_VISIBLE|WS_TABSTOP,378,44,72,26,w,(HMENU)(INT_PTR)IDC_REFRESH,app_instance,NULL);
   tag_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL,460,44,260,26,w,(HMENU)IDC_TAG,app_instance,NULL);
-  CreateWindowW(L"BUTTON",L"Apply tags",WS_CHILD|WS_VISIBLE|WS_TABSTOP,728,44,90,26,w,(HMENU)IDC_TAG+100,app_instance,NULL);
-  CreateWindowW(L"BUTTON",L"View",WS_CHILD|WS_VISIBLE|WS_TABSTOP,826,44,70,26,w,(HMENU)IDC_OPEN,app_instance,NULL);
-  photo_list=CreateWindowW(WC_LISTVIEWW,L"",WS_CHILD|WS_VISIBLE|WS_BORDER|LVS_ICON|LVS_SINGLESEL|LVS_SHOWSELALWAYS,10,80,680,540,w,(HMENU)IDC_LIST,app_instance,NULL);
+  CreateWindowW(L"BUTTON",L"Apply tags",WS_CHILD|WS_VISIBLE|WS_TABSTOP,728,44,90,26,w,(HMENU)(INT_PTR)(IDC_TAG+100),app_instance,NULL);
+  CreateWindowW(L"BUTTON",L"View",WS_CHILD|WS_VISIBLE|WS_TABSTOP,826,44,70,26,w,(HMENU)(INT_PTR)IDC_OPEN,app_instance,NULL);
+  photo_list=CreateWindowW(WC_LISTVIEWW,L"",WS_CHILD|WS_VISIBLE|WS_BORDER|LVS_ICON|LVS_SINGLESEL|LVS_SHOWSELALWAYS,10,80,680,540,w,(HMENU)(INT_PTR)IDC_LIST,app_instance,NULL);
   ListView_SetExtendedListViewStyle(photo_list,LVS_EX_DOUBLEBUFFER|LVS_EX_LABELTIP);
   thumbnail_list=ImageList_Create(96,96,ILC_COLOR32|ILC_MASK,64,64);ListView_SetImageList(photo_list,thumbnail_list,LVSIL_NORMAL);
   WNDCLASSW pc={0};pc.lpfnWndProc=preview_proc;pc.hInstance=app_instance;pc.lpszClassName=PREVIEW_CLASS;pc.hbrBackground=(HBRUSH)GetStockObject(BLACK_BRUSH);RegisterClassW(&pc);
-  preview_window=CreateWindowW(PREVIEW_CLASS,L"",WS_CHILD|WS_VISIBLE|WS_BORDER,700,80,380,540,w,(HMENU)IDC_PREVIEW,app_instance,NULL);
-  status_text=CreateWindowW(L"STATIC",L"Ready",WS_CHILD|WS_VISIBLE,10,630,1000,24,w,(HMENU)IDC_STATUS,app_instance,NULL);
+  preview_window=CreateWindowW(PREVIEW_CLASS,L"",WS_CHILD|WS_VISIBLE|WS_BORDER,700,80,380,540,w,(HMENU)(INT_PTR)IDC_PREVIEW,app_instance,NULL);
+  status_text=CreateWindowW(L"STATIC",L"Ready",WS_CHILD|WS_VISIBLE,10,630,1000,24,w,(HMENU)(INT_PTR)IDC_STATUS,app_instance,NULL);
   HWND controls[]={path_edit,search_edit,tag_edit,photo_list,status_text};for(int k=0;k<5;k++)SendMessageW(controls[k],WM_SETFONT,(WPARAM)font,TRUE);
   if(!catalog_open())MessageBoxW(w,L"Could not open the photo catalog.",L"Tag Explorer",MB_ICONERROR);
   refresh_catalog();return 0;
