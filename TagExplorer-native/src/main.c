@@ -50,8 +50,9 @@ static HWND viewer_tags_edit;
 static int viewer_rotation_busy;
 typedef struct { HWND window; wchar_t path[MAX_PATH]; int degrees; HRESULT result; } RotateJob;
 static DWORD WINAPI rotate_worker(LPVOID parameter){
- RotateJob *job=(RotateJob*)parameter; CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);
- job->result=image_rotate_file(job->path,job->degrees); CoUninitialize();
+ RotateJob *job=(RotateJob*)parameter; HRESULT com_hr=CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);
+ job->result=FAILED(com_hr)?com_hr:image_rotate_file(job->path,job->degrees);
+ if(SUCCEEDED(com_hr))CoUninitialize();
  if(!PostMessageW(job->window,WM_APP_ROTATE_COMPLETE,0,(LPARAM)job)) free(job);
  return 0;
 }
