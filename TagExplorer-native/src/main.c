@@ -102,7 +102,7 @@ static void refresh_tag_list(void){
   /* Each year is a selectable parent; its month entries carry that year in
      their database key, so equal month names from different years never merge. */
   for(int i=0;i<db_count;i++)if(wcsncmp(db_names[i],L"Year: ",6)==0&&wcslen(db_names[i])==10){
-   wchar_t year[5],label[16];memcpy(year,db_names[i]+6,4*sizeof(wchar_t));year[4]=0;
+   wchar_t year[5],label[16];lstrcpynW(year,db_names[i]+6,5);
    swprintf(label,16,L"%s",year);add_tag_list_entry(db_names[i],label);
    for(int m=1;m<=12;m++){
     wchar_t key[32],child[48];swprintf(key,32,L"Month: %s-%02d",year,m);
@@ -244,7 +244,7 @@ static void viewer_apply_date_tag(const wchar_t *tag){
  }else set_status(L"Could not apply the date tag to this photo.");
 }
 static int prompt_tag_year(HWND owner,wchar_t *year,size_t capacity){
- SYSTEMTIME now;GetLocalTime(&now);swprintf(year,capacity,L"%04u",now.wYear);
+ SYSTEMTIME now;GetLocalTime(&now);swprintf(year,capacity,L"%04u",(unsigned)now.wYear);
  if(!prompt_value(owner,L"Choose year",L"Enter the year for this month:",year,year,capacity))return 0;
  if(wcslen(year)!=4||year[0]<L'0'||year[0]>L'9'||year[1]<L'0'||year[1]>L'9'||year[2]<L'0'||year[2]>L'9'||year[3]<L'0'||year[3]>L'9'){
   MessageBoxW(owner,L"Enter a valid four-digit year, such as 2026.",L"Year tag",MB_ICONWARNING);return 0;
