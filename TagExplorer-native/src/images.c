@@ -55,3 +55,58 @@ HRESULT image_draw(HDC dc,const RECT *area,const wchar_t *path,int rotation){
  if(saved)RestoreDC(dc,saved);
  SelectObject(mem,old);DeleteDC(mem);DeleteObject(bmp);return hr;
 }
+
+
+/* Rotate the image pixels and replace the original file atomically. The decoder
+   and encoder are released before replacement so Windows can rename the file. */
+HRESULT image_rotate_file(const wchar_t *path, int clockwise_degrees){
+ if(!path || (clockwise_degrees!=90 && clockwise_degrees!=270)) return E_INVALIDARG;
+ HRESULT hr=factory_get(); if(FAILED(hr)) return hr;
+ IWICBitmapDecoder *decoder=NULL; IWICBitmapFrameDecode *frame=NULL;
+ IWICBitmapFlipRotator *rotator=NULL; IWICBitmapEncoder *encoder=NULL;
+ IWICBitmapFrameEncode *out_frame=NULL; IPropertyBag2 *options=NULL;
+ IWICStream *stream=NULL; GUID container={0},pixel_format={0};
+ UINT width=0,height=0; double dpi_x=96.0,dpi_y=96.0;
+ wchar_t folder[MAX_PATH],temp[MAX_PATH]; lstrcpynW(folder,path,MAX_PATH);
+ wchar_t *slash=wcsrchr(folder,L'\\'); if(!slash) slash=wcsrchr(folder,L'/');
+ if(slash) slash[1]=0; else lstrcpyW(folder,L".\\");
+ if(!GetTempFileNameW(folder,L"ter",0,temp)) return HRESULT_FROM_WIN32(GetLastError());
+ hr=IWICImagingFactory_CreateDecoderFromFilename(factory,path,NULL,GENERIC_READ,WICDecodeMetadataCacheOnDemand,&decoder);
+ if(FAILED(hr)) goto done;
+ hr=IWICBitmapDecoder_GetContainerFormat(decoder,&container); if(FAILED(hr)) goto done;
+ hr=IWICBitmapDecoder_GetFrame(decoder,0,&frame); if(FAILED(hr)) goto done;
+ hr=IWICBitmapFrameDecode_GetSize(frame,&width,&height); if(FAILED(hr)) goto done;
+ IWICBitmapFrameDecode_GetResolution(frame,&dpi_x,&dpi_y);
+ hr=IWICImagingFactory_CreateBitmapFlipRotator(factory,&rotator); if(FAILED(hr)) goto done;
+ hr=IWICBitmapFlipRotator_Initialize(rotator,(IWICBitmapSource*)frame,
+      clockwise_degrees==90?WICBitmapTransformRotate90:WICBitmapTransformRotate270);
+ if(FAILED(hr)) goto done;
+ hr=IWICImagingFactory_CreateStream(factory,&stream); if(FAILED(hr)) goto done;
+ hr=IWICStream_InitializeFromFilename(stream,temp,GENERIC_WRITE); if(FAILED(hr)) goto done;
+ hr=IWICImagingFactory_CreateEncoder(factory,&container,NULL,&encoder); if(FAILED(hr)) goto done;
+ hr=IWICBitmapEncoder_Initialize(encoder,(IStream*)stream,WICBitmapEncoderNoCache); if(FAILED(hr)) goto done;
+ hr=IWICBitmapEncoder_CreateNewFrame(encoder,&out_frame,&options); if(FAILED(hr)) goto done;
+ hr=IWICBitmapFrameEncode_Initialize(out_frame,options); if(FAILED(hr)) goto done;
+ hr=IWICBitmapFrameEncode_SetSize(out_frame,clockwise_degrees==90?height:height,
+                                  clockwise_degrees==90?width:width);
+ if(FAILED(hr)) goto done;
+ IWICBitmapSource_GetPixelFormat((IWICBitmapSource*)frame,&pixel_format);
+ hr=IWICBitmapFrameEncode_SetPixelFormat(out_frame,&pixel_format); if(FAILED(hr)) goto done;
+ if(dpi_x>0&&dpi_y>0) IWICBitmapFrameEncode_SetResolution(out_frame,dpi_x,dpi_y);
+ hr=IWICBitmapFrameEncode_WriteSource(out_frame,(IWICBitmapSource*)rotator,NULL); if(FAILED(hr)) goto done;
+ hr=IWICBitmapFrameEncode_Commit(out_frame); if(FAILED(hr)) goto done;
+ hr=IWICBitmapEncoder_Commit(encoder); if(FAILED(hr)) goto done;
+done:
+ if(options) IPropertyBag2_Release(options);
+ if(out_frame) IWICBitmapFrameEncode_Release(out_frame);
+ if(encoder) IWICBitmapEncoder_Release(encoder);
+ if(stream) IWICStream_Release(stream);
+ if(rotator) IWICBitmapFlipRotator_Release(rotator);
+ if(frame) IWICBitmapFrameDecode_Release(frame);
+ if(decoder) IWICBitmapDecoder_Release(decoder);
+ if(SUCCEEDED(hr)){
+  if(!MoveFileExW(temp,path,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)) hr=HRESULT_FROM_WIN32(GetLastError());
+ }
+ if(FAILED(hr)) DeleteFileW(temp);
+ return hr;
+}
