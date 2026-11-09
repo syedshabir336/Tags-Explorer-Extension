@@ -45,7 +45,16 @@
 #define ID_VIEW_YEAR_TAG 1207
 #define ID_VIEW_PREVIOUS 1208
 #define ID_VIEW_NEXT 1209
+#define WM_APP_ROTATE_COMPLETE (WM_APP+41)
 static HWND viewer_tags_edit;
+static int viewer_rotation_busy;
+typedef struct { HWND window; wchar_t path[MAX_PATH]; int degrees; HRESULT result; } RotateJob;
+static DWORD WINAPI rotate_worker(LPVOID parameter){
+ RotateJob *job=(RotateJob*)parameter; CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);
+ job->result=image_rotate_file(job->path,job->degrees); CoUninitialize();
+ if(!PostMessageW(job->window,WM_APP_ROTATE_COMPLETE,0,(LPARAM)job)) free(job);
+ return 0;
+}
 
 static HINSTANCE app_instance;
 static HWND main_window,sidebar,source_list,tag_list,address_edit,search_edit,tag_edit,photo_list,status_text;
@@ -241,18 +250,16 @@ static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   switch(LOWORD(wp)){
    case ID_VIEW_ROTATE_LEFT:
    case ID_VIEW_ROTATE_RIGHT:{
-    if(viewer_index<0||viewer_index>=photo_count)return 0;
-    int degrees=LOWORD(wp)==ID_VIEW_ROTATE_RIGHT?90:270;
-    SetCursor(LoadCursorW(NULL,IDC_WAIT));
-    HRESULT rotate_hr=image_rotate_file(photo_paths[viewer_index],degrees);
-    SetCursor(LoadCursorW(NULL,IDC_ARROW));
-    if(SUCCEEDED(rotate_hr)){
-     viewer_rotation=0;InvalidateRect(w,NULL,TRUE);
-     set_status(L"Rotation saved to the original image file.");
-    }else{
-     wchar_t error[192];swprintf(error,192,L"Could not save rotation (0x%08X). The original image was not replaced.",(unsigned)rotate_hr);
-     set_status(error);MessageBoxW(w,error,L"Rotate image",MB_ICONERROR);
-    }
+    if(viewer_index<0||viewer_index>=photo_count||viewer_rotation_busy)return 0;
+    RotateJob *job=(RotateJob*)calloc(1,sizeof(*job));if(!job){set_status(L"Not enough memory to rotate this image.");return 0;}
+    job->window=w;job->degrees=LOWORD(wp)==ID_VIEW_ROTATE_RIGHT?90:270;
+    lstrcpynW(job->path,photo_paths[viewer_index],MAX_PATH);
+    viewer_rotation_busy=1;
+    EnableWindow(GetDlgItem(w,ID_VIEW_ROTATE_LEFT),FALSE);EnableWindow(GetDlgItem(w,ID_VIEW_ROTATE_RIGHT),FALSE);
+    set_status(L"Saving rotation to the original image... You can keep browsing.");
+    HANDLE thread=CreateThread(NULL,0,rotate_worker,job,0,NULL);
+    if(!thread){viewer_rotation_busy=0;EnableWindow(GetDlgItem(w,ID_VIEW_ROTATE_LEFT),TRUE);EnableWindow(GetDlgItem(w,ID_VIEW_ROTATE_RIGHT),TRUE);free(job);set_status(L"Could not start the image rotation task.");}
+    else CloseHandle(thread);
     SetFocus(w);return 0;
    }
    case ID_VIEW_PREVIOUS:if(photo_count){viewer_index=(viewer_index+photo_count-1)%photo_count;viewer_rotation=0;SetWindowTextW(w,PathFindFileNameW(photo_paths[viewer_index]));InvalidateRect(w,NULL,TRUE);}SetFocus(w);return 0;
@@ -267,7 +274,19 @@ static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   if(wp==VK_RIGHT&&photo_count){viewer_index=(viewer_index+1)%photo_count;viewer_rotation=0;SetWindowTextW(w,PathFindFileNameW(photo_paths[viewer_index]));InvalidateRect(w,NULL,TRUE);return 0;}
   if(wp==VK_LEFT&&photo_count){viewer_index=(viewer_index+photo_count-1)%photo_count;viewer_rotation=0;SetWindowTextW(w,PathFindFileNameW(photo_paths[viewer_index]));InvalidateRect(w,NULL,TRUE);return 0;}
   if(wp=='R'){viewer_rotation=(viewer_rotation+90)%360;InvalidateRect(w,NULL,TRUE);}return 0;
- case WM_DESTROY:if(main_window)refresh_catalog();return 0;
+ case WM_APP_ROTATE_COMPLETE:{
+  RotateJob *job=(RotateJob*)lp;viewer_rotation_busy=0;
+  EnableWindow(GetDlgItem(w,ID_VIEW_ROTATE_LEFT),TRUE);EnableWindow(GetDlgItem(w,ID_VIEW_ROTATE_RIGHT),TRUE);
+  if(SUCCEEDED(job->result)){
+   if(viewer_index>=0&&viewer_index<photo_count&&!_wcsicmp(photo_paths[viewer_index],job->path)){viewer_rotation=0;InvalidateRect(w,NULL,TRUE);}
+   set_status(L"Rotation saved to the original image file.");
+  }else{
+   wchar_t error[192];swprintf(error,192,L"Could not save rotation (0x%08X). The original image was left unchanged.",(unsigned)job->result);
+   set_status(error);MessageBoxW(w,error,L"Rotate image",MB_ICONERROR);
+  }
+  free(job);SetFocus(w);return 0;
+ }
+ case WM_DESTROY:if(main_window&&IsWindow(main_window))refresh_catalog();return 0;
  case WM_PAINT:{PAINTSTRUCT ps;HDC dc=BeginPaint(w,&ps);RECT rc;GetClientRect(w,&rc);FillRect(dc,&rc,(HBRUSH)GetStockObject(BLACK_BRUSH));rc.top+=58;if(photo_count)image_draw(dc,&rc,photo_paths[viewer_index],viewer_rotation);EndPaint(w,&ps);return 0;}
  }return DefWindowProcW(w,msg,wp,lp);
 }
