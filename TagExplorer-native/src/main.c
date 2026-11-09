@@ -238,11 +238,11 @@ static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   make_button(w,L"Add folder",ID_ADD_FOLDER,20,122,238,38);
   make_button(w,L"Add photos",ID_ADD_FILES,20,168,238,38);
   make_label(w,L"SOURCES",24,232,220,20,font_small,fg_muted);
-  source_list=CreateWindowExW(0,L"LISTBOX",L"",WS_CHILD|WS_VISIBLE|LBS_NOTIFY|LBS_NOINTEGRALHEIGHT|WS_VSCROLL,18,260,242,126,w,(HMENU)(INT_PTR)ID_SOURCE_LIST,app_instance,NULL);
-  SendMessageW(source_list,WM_SETFONT,(WPARAM)font_ui,TRUE);MoveWindow(source_list,18,260,242,126,TRUE);SendMessageW(source_list,LB_ADDSTRING,0,(LPARAM)L"  All photos");
+  source_list=CreateWindowExW(0,L"LISTBOX",L"",WS_CHILD|WS_VISIBLE|LBS_NOTIFY|LBS_NOINTEGRALHEIGHT|LBS_OWNERDRAWFIXED|LBS_HASSTRINGS|WS_VSCROLL,18,260,242,126,w,(HMENU)(INT_PTR)ID_SOURCE_LIST,app_instance,NULL);
+  SendMessageW(source_list,WM_SETFONT,(WPARAM)font_ui,TRUE);SendMessageW(source_list,LB_SETITEMHEIGHT,0,28);MoveWindow(source_list,18,260,242,126,TRUE);SendMessageW(source_list,LB_ADDSTRING,0,(LPARAM)L"  All photos");
   make_label(w,L"TAGS",24,408,220,20,font_small,fg_muted);
-  tag_list=CreateWindowExW(0,L"LISTBOX",L"",WS_CHILD|WS_VISIBLE|LBS_NOTIFY|LBS_NOINTEGRALHEIGHT|WS_VSCROLL,18,438,242,250,w,(HMENU)(INT_PTR)ID_TAG_LIST,app_instance,NULL);
-  SendMessageW(tag_list,WM_SETFONT,(WPARAM)font_ui,TRUE);
+  tag_list=CreateWindowExW(0,L"LISTBOX",L"",WS_CHILD|WS_VISIBLE|LBS_NOTIFY|LBS_NOINTEGRALHEIGHT|LBS_OWNERDRAWFIXED|LBS_HASSTRINGS|WS_VSCROLL,18,438,242,250,w,(HMENU)(INT_PTR)ID_TAG_LIST,app_instance,NULL);
+  SendMessageW(tag_list,WM_SETFONT,(WPARAM)font_ui,TRUE);SendMessageW(tag_list,LB_SETITEMHEIGHT,0,28);
   make_button(w,L"Install Explorer menu",ID_SHELL,20,704,238,36);
   title_label=make_label(w,L"Photo library",SIDEBAR_W+28,15,420,28,font_title,fg_main);
   subtitle_label=make_label(w,L"Browse, search and organize your collection",SIDEBAR_W+29,42,450,18,font_small,fg_muted);
