@@ -23,7 +23,8 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force artifacts/TagExplorer-Native | Out-Null
-          Copy-Item build-native/Release/TagExplorer.exe artifacts/TagExplorer-Native/\n          Copy-Item TagExplorer-native/assets artifacts/TagExplorer-Native/ -Recurse
+          Copy-Item build-native/Release/TagExplorer.exe artifacts/TagExplorer-Native/
+          Copy-Item TagExplorer-native/assets artifacts/TagExplorer-Native/ -Recurse
       - uses: actions/upload-artifact@v4
         with:
           name: TagExplorer-Native-win-x64
