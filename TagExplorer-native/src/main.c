@@ -94,7 +94,7 @@ static void tag_combo_update_suggestions(HWND combo){
  wchar_t *comma=wcsrchr(token_text,L','),*semi=wcsrchr(token_text,L';');
  wchar_t *separator=comma;if(semi&&(!separator||semi>separator))separator=semi;
  wchar_t *token=separator?separator+1:token_text;
- while(*token==L' '||*token==L'\\t')token++;
+ while(*token==L' '||*token==L'\t')token++;
  size_t prefix=wcslen(token);
  tag_suggestion_update=1;SendMessageW(combo,CB_SHOWDROPDOWN,FALSE,0);SendMessageW(combo,CB_RESETCONTENT,0,0);
  if(prefix){
@@ -112,7 +112,7 @@ static void tag_combo_accept_suggestion(HWND combo){
  wchar_t *comma=wcsrchr(result,L','),*semi=wcsrchr(result,L';');
  wchar_t *separator=comma;if(semi&&(!separator||semi>separator))separator=semi;
  wchar_t *token=separator?separator+1:result;
- while(*token==L' '||*token==L'\\t')token++;
+ while(*token==L' '||*token==L'\t')token++;
  size_t keep=(size_t)(token-result);if(keep>=512)return;
  result[keep]=0;wcsncat(result,suggestion,511-wcslen(result));
  tag_suggestion_update=1;SetWindowTextW(combo,result);SendMessageW(combo,CB_SETEDITSEL,0,MAKELONG((WORD)wcslen(result),(WORD)wcslen(result)));tag_suggestion_update=0;
@@ -570,7 +570,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR command_line,int
  ACCEL keys[]={{FVIRTKEY,VK_LEFT,ID_VIEW_PREVIOUS},{FVIRTKEY,VK_RIGHT,ID_VIEW_NEXT}};
  viewer_accel=CreateAcceleratorTableW(keys,2);
  ShowWindow(w,show);UpdateWindow(w);MSG m;while(GetMessageW(&m,NULL,0,0)>0){
-  if(viewer_window&&IsWindow(viewer_window)&&GetActiveWindow()==viewer_window&&GetFocus()!=viewer_tags_edit&&viewer_accel&&TranslateAcceleratorW(viewer_window,viewer_accel,&m))continue;
+  if(viewer_window&&IsWindow(viewer_window)&&GetActiveWindow()==viewer_window&&GetFocus()!=viewer_tags_edit&&GetParent(GetFocus())!=viewer_tags_edit&&viewer_accel&&TranslateAcceleratorW(viewer_window,viewer_accel,&m))continue;
   TranslateMessage(&m);DispatchMessageW(&m);
  }
  if(viewer_accel)DestroyAcceleratorTable(viewer_accel);CoUninitialize();return (int)m.wParam;
