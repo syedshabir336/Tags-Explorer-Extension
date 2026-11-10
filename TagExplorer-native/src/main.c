@@ -286,6 +286,7 @@ static void navigate_address(void){
  else catalog_add(path);
  SetWindowTextW(search_edit,path);active_tag[0]=0;no_tags_filter=0;SendMessageW(tag_list,LB_SETCURSEL,0,0);refresh_catalog();
 }
+static int prompt_value(HWND owner,const wchar_t *title,const wchar_t *label,const wchar_t *current_name,wchar_t *new_name,size_t capacity);
 static void edit_tags_selected(HWND owner){
  int first=ListView_GetNextItem(photo_list,-1,LVNI_SELECTED);
  if(first<0){set_status(L"Select one or more photos to edit their tags.");return;}
@@ -475,6 +476,7 @@ static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   MoveWindow(GetDlgItem(w,ID_VIEW_YEAR_TAG),452,12,90,34,TRUE);
   MoveWindow(viewer_tags_edit,550,12,width-838>100?width-838:100,260,TRUE);
   if(viewer_tags_label)MoveWindow(viewer_tags_label,16,54,width-32>200?width-32:200,42,TRUE);
+  MoveWindow(GetDlgItem(w,ID_VIEW_EDIT_TAGS),width-376,12,88,34,TRUE);
   MoveWindow(GetDlgItem(w,ID_VIEW_APPLY_TAGS),width-276,12,88,34,TRUE);
   MoveWindow(GetDlgItem(w,ID_VIEW_PREVIOUS),width-180,12,82,34,TRUE);
   MoveWindow(GetDlgItem(w,ID_VIEW_NEXT),width-90,12,74,34,TRUE);
