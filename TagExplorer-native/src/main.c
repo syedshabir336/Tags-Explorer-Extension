@@ -155,7 +155,7 @@ static void refresh_catalog(void){
  wchar_t message[160];if(active_tag[0])swprintf(message,160,L"%d photos tagged '%s'",photo_count,active_tag);else swprintf(message,160,L"%d photos",photo_count);set_status(message);
 }
 static void enqueue_thumbnail(int index){
- if(index<0||index>=photo_count||!photo_paths||!photo_thumbnail_states||photo_thumbnail_states[index])return;
+ if(index<0||index>=photo_count||!photo_paths||!photo_thumbnail_states||!thumbnail_thread||!thumbnail_event||photo_thumbnail_states[index])return;
  ThumbRequest request={0};request.generation=InterlockedCompareExchange(&thumbnail_generation,0,0);request.index=index;
  lstrcpynW(request.path,photo_paths[index],MAX_PATH);
  EnterCriticalSection(&thumbnail_lock);
@@ -476,7 +476,7 @@ static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   ListView_SetExtendedListViewStyle(photo_list,LVS_EX_DOUBLEBUFFER|LVS_EX_LABELTIP|LVS_EX_BORDERSELECT);ListView_SetBkColor(photo_list,bg_main);ListView_SetTextBkColor(photo_list,bg_main);ListView_SetTextColor(photo_list,fg_main);
   thumbnail_list=ImageList_Create(176,136,ILC_COLOR32|ILC_MASK,THUMBNAIL_SLOTS,16);ListView_SetImageList(photo_list,thumbnail_list,LVSIL_NORMAL);for(int si=0;si<THUMBNAIL_SLOTS;si++)slot_photo[si]=-1;
   status_text=make_label(w,L"Ready",0,0,500,20,font_small,fg_muted);
-  InitializeCriticalSection(&thumbnail_lock);thumbnail_event=CreateEventW(NULL,FALSE,FALSE,NULL);thumbnail_thread=CreateThread(NULL,0,thumbnail_worker,NULL,0,NULL);
+  InitializeCriticalSection(&thumbnail_lock);thumbnail_event=CreateEventW(NULL,FALSE,FALSE,NULL);if(thumbnail_event)thumbnail_thread=CreateThread(NULL,0,thumbnail_worker,NULL,0,NULL);
   if(!catalog_open())MessageBoxW(w,L"Could not open the local photo catalog.",L"Tag Explorer",MB_ICONERROR);
   refresh_catalog();return 0;
  }
@@ -512,7 +512,7 @@ static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
  case WM_CTLCOLOREDIT:{HDC dc=(HDC)wp;SetTextColor(dc,fg_main);SetBkColor(dc,bg_input);return (LRESULT)GetStockObject(DKGRAY_BRUSH);}
  case WM_CTLCOLORLISTBOX:{HDC dc=(HDC)wp;SetTextColor(dc,fg_main);SetBkColor(dc,bg_panel);return (LRESULT)GetStockObject(DKGRAY_BRUSH);}
  case WM_ERASEBKGND:{RECT rc;GetClientRect(w,&rc);HBRUSH base=CreateSolidBrush(bg_main);FillRect((HDC)wp,&rc,base);DeleteObject(base);RECT side={0,0,SIDEBAR_W,rc.bottom};HBRUSH panel=CreateSolidBrush(bg_panel);FillRect((HDC)wp,&side,panel);DeleteObject(panel);return 1;}
- case WM_DESTROY:InterlockedIncrement(&thumbnail_generation);if(thumbnail_event){EnterCriticalSection(&thumbnail_lock);thumbnail_stopping=1;SetEvent(thumbnail_event);LeaveCriticalSection(&thumbnail_lock);}if(thumbnail_thread){WaitForSingleObject(thumbnail_thread,5000);CloseHandle(thumbnail_thread);}if(thumbnail_event)CloseHandle(thumbnail_event);DeleteCriticalSection(&thumbnail_lock);free_results();if(tag_names){for(int i=0;i<tag_name_count;i++)free(tag_names[i]);free(tag_names);}if(thumbnail_list)ImageList_Destroy(thumbnail_list);catalog_close();if(font_ui)DeleteObject(font_ui);if(font_small)DeleteObject(font_small);if(font_title)DeleteObject(font_title);icons_shutdown();PostQuitMessage(0);return 0;
+ case WM_DESTROY:InterlockedIncrement(&thumbnail_generation);if(thumbnail_event){EnterCriticalSection(&thumbnail_lock);thumbnail_head=thumbnail_tail=thumbnail_count=0;thumbnail_stopping=1;SetEvent(thumbnail_event);LeaveCriticalSection(&thumbnail_lock);}if(thumbnail_thread){WaitForSingleObject(thumbnail_thread,INFINITE);CloseHandle(thumbnail_thread);}if(thumbnail_event)CloseHandle(thumbnail_event);DeleteCriticalSection(&thumbnail_lock);free_results();if(tag_names){for(int i=0;i<tag_name_count;i++)free(tag_names[i]);free(tag_names);}if(thumbnail_list)ImageList_Destroy(thumbnail_list);catalog_close();if(font_ui)DeleteObject(font_ui);if(font_small)DeleteObject(font_small);if(font_title)DeleteObject(font_title);icons_shutdown();PostQuitMessage(0);return 0;
  }return DefWindowProcW(w,msg,wp,lp);
 }
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR command_line,int show){
