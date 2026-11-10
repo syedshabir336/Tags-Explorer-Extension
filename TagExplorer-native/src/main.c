@@ -195,7 +195,7 @@ static void accept_thumbnail(ThumbReady *ready){
   if(slot<0){
    if(thumbnail_slot_count<THUMBNAIL_SLOTS)slot=thumbnail_slot_count++;
    else slot=thumbnail_next_slot++%THUMBNAIL_SLOTS;
-   int old=slot_photo[slot];if(old>=0&&old<photo_count&&photo_image_slots[old]==slot){photo_image_slots[old]=-1;ListView_RedrawItems(photo_list,old,old);}
+   int old=slot_photo[slot];if(old>=0&&old<photo_count&&photo_image_slots[old]==slot){photo_image_slots[old]=-1;if(photo_thumbnail_states)photo_thumbnail_states[old]=0;ListView_RedrawItems(photo_list,old,old);}
    photo_image_slots[row]=slot;slot_photo[slot]=row;
   }
   ICONINFO info={0};info.fIcon=TRUE;info.hbmColor=ready->bitmap;info.hbmMask=ready->bitmap;
