@@ -2,6 +2,10 @@
 #include "images.h"
 #include <wincodecsdk.h>
 #include <math.h>
+#include <shlwapi.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 static IWICImagingFactory *factory;
 static HRESULT factory_get(void){if(factory)return S_OK;return CoCreateInstance(&CLSID_WICImagingFactory,NULL,CLSCTX_INPROC_SERVER,&IID_IWICImagingFactory,(void**)&factory);}
 static IWICBitmapSource *decode_scaled(const wchar_t *path,UINT edge){
@@ -23,6 +27,40 @@ HBITMAP image_thumbnail(const wchar_t *path,UINT edge){
  IWICBitmapSource *src=decode_scaled(path,edge);if(!src)return NULL;UINT w=0,h=0;IWICBitmapSource_GetSize(src,&w,&h);
  BITMAPINFO bi={0};bi.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);bi.bmiHeader.biWidth=(LONG)w;bi.bmiHeader.biHeight=-(LONG)h;bi.bmiHeader.biPlanes=1;bi.bmiHeader.biBitCount=32;bi.bmiHeader.biCompression=BI_RGB;
  void *bits=NULL;HBITMAP bmp=CreateDIBSection(NULL,&bi,DIB_RGB_COLORS,&bits,NULL,0);if(bmp&&bits)IWICBitmapSource_CopyPixels(src,NULL,w*4,w*h*4,(BYTE*)bits);IWICBitmapSource_Release(src);return bmp;
+}
+static wchar_t g_thumb_cache_dir[MAX_PATH];
+static int g_thumb_cache_ready;
+static void thumbnail_cache_init(void){
+ if(g_thumb_cache_ready)return;g_thumb_cache_ready=1;
+ if(!GetEnvironmentVariableW(L"LOCALAPPDATA",g_thumb_cache_dir,MAX_PATH))return;
+ if(!PathAppendW(g_thumb_cache_dir,L"TagExplorer\\ThumbCache"))return;
+ wchar_t parent[MAX_PATH];lstrcpynW(parent,g_thumb_cache_dir,MAX_PATH);PathRemoveFileSpecW(parent);CreateDirectoryW(parent,NULL);CreateDirectoryW(g_thumb_cache_dir,NULL);
+}
+static uint64_t thumbnail_hash(const wchar_t *path,const WIN32_FILE_ATTRIBUTE_DATA *a,UINT edge){
+ uint64_t h=1469598103934665603ULL;for(const wchar_t *p=path;*p;p++){wchar_t c=(wchar_t)towlower(*p);h^=(uint16_t)c;h*=1099511628211ULL;}
+ h^=a->nFileSizeHigh;h*=1099511628211ULL;h^=a->nFileSizeLow;h*=1099511628211ULL;
+ h^=a->ftLastWriteTime.dwHighDateTime;h*=1099511628211ULL;h^=a->ftLastWriteTime.dwLowDateTime;h*=1099511628211ULL;h^=edge;return h;
+}
+static void thumbnail_cache_save(const wchar_t *file,HBITMAP bmp){
+ BITMAP b={0};if(!GetObjectW(bmp,sizeof(b),&b)||b.bmWidth<=0||b.bmHeight==0)return;
+ BITMAPINFO bi={0};bi.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);bi.bmiHeader.biWidth=b.bmWidth;bi.bmiHeader.biHeight=-abs(b.bmHeight);bi.bmiHeader.biPlanes=1;bi.bmiHeader.biBitCount=32;bi.bmiHeader.biCompression=BI_RGB;
+ DWORD bytes=(DWORD)b.bmWidth*(DWORD)abs(b.bmHeight)*4;BYTE *pixels=(BYTE*)malloc(bytes);if(!pixels)return;
+ HDC dc=GetDC(NULL);int lines=GetDIBits(dc,bmp,0,(UINT)abs(b.bmHeight),pixels,&bi,DIB_RGB_COLORS);ReleaseDC(NULL,dc);
+ if(lines==(int)abs(b.bmHeight)){
+  BITMAPFILEHEADER fh={0};fh.bfType=0x4D42;fh.bfOffBits=sizeof(fh)+sizeof(BITMAPINFOHEADER);fh.bfSize=fh.bfOffBits+bytes;
+  HANDLE f=CreateFileW(file,GENERIC_WRITE,0,NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_TEMPORARY,NULL);
+  if(f!=INVALID_HANDLE_VALUE){DWORD written;WriteFile(f,&fh,sizeof(fh),&written,NULL);WriteFile(f,&bi.bmiHeader,sizeof(BITMAPINFOHEADER),&written,NULL);WriteFile(f,pixels,bytes,&written,NULL);CloseHandle(f);}
+ }
+ free(pixels);
+}
+HBITMAP image_thumbnail_cached(const wchar_t *path,UINT edge){
+ WIN32_FILE_ATTRIBUTE_DATA attrs;if(!GetFileAttributesExW(path,GetFileExInfoStandard,&attrs))return NULL;
+ thumbnail_cache_init();if(!g_thumb_cache_dir[0])return image_thumbnail(path,edge);
+ uint64_t key=thumbnail_hash(path,&attrs,edge);wchar_t file[MAX_PATH],name[40];swprintf(name,40,L"%016llX.bmp",(unsigned long long)key);
+ lstrcpynW(file,g_thumb_cache_dir,MAX_PATH);if(!PathAppendW(file,name))return image_thumbnail(path,edge);
+ HBITMAP cached=(HBITMAP)LoadImageW(NULL,file,IMAGE_BITMAP,0,0,LR_LOADFROMFILE|LR_CREATEDIBSECTION);
+ if(cached)return cached;
+ HBITMAP bmp=image_thumbnail(path,edge);if(bmp)thumbnail_cache_save(file,bmp);return bmp;
 }
 static HBITMAP g_view_cache;
 static wchar_t g_view_cache_path[MAX_PATH];
