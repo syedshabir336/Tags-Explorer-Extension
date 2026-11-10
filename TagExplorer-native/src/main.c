@@ -111,8 +111,19 @@ static void tag_combo_update_suggestions(HWND combo){
  SetWindowTextW(combo,tag_suggestion_original[slot]);
  SendMessageW(combo,CB_SETEDITSEL,0,MAKELONG(LOWORD(edit_selection),HIWORD(edit_selection)));
  if(prefix){
-  int added=0;
-  for(int i=0;i<tag_name_count&&added<8;i++)if(!_wcsnicmp(tag_names[i],token,(int)prefix)&&_wcsicmp(tag_names[i],token)){SendMessageW(combo,CB_ADDSTRING,0,(LPARAM)tag_names[i]);added++;}
+  int added=0,exact=0;
+  for(int i=0;i<tag_name_count&&added<8;i++)if(!_wcsnicmp(tag_names[i],token,(int)prefix)){
+   if(!_wcsicmp(tag_names[i],token))exact=1;
+   else{SendMessageW(combo,CB_ADDSTRING,0,(LPARAM)tag_names[i]);added++;}
+  }
+  /* A suggestion is optional: keep a visible create-new choice so users
+     are never restricted to tags already present in the library. */
+  if(!exact&&prefix){
+   wchar_t create_label[512];swprintf(create_label,512,L"Create new tag: %s",token);
+   LRESULT item=SendMessageW(combo,CB_ADDSTRING,0,(LPARAM)create_label);
+   if(item>=0)SendMessageW(combo,CB_SETITEMDATA,(WPARAM)item,(LPARAM)(INT_PTR)-1);
+   added++;
+  }
   if(added)SendMessageW(combo,CB_SHOWDROPDOWN,TRUE,0);
  }
  tag_suggestion_update=0;
@@ -120,7 +131,16 @@ static void tag_combo_update_suggestions(HWND combo){
 static void tag_combo_accept_suggestion(HWND combo){
  if(!combo||tag_suggestion_update)return;
  int slot=tag_combo_slot(combo),selected=(int)SendMessageW(combo,CB_GETCURSEL,0,0);if(selected<0)return;
- wchar_t suggestion[256],result[512];if(SendMessageW(combo,CB_GETLBTEXT,selected,(LPARAM)suggestion)==CB_ERR)return;
+ wchar_t suggestion[512],result[512];
+ if(SendMessageW(combo,CB_GETLBTEXT,selected,(LPARAM)suggestion)==CB_ERR)return;
+ if((INT_PTR)SendMessageW(combo,CB_GETITEMDATA,selected,0)==-1){
+  /* Selecting "Create new tag" accepts the free-form text already typed;
+     the Add tags action persists it through catalog_apply_tags(). */
+  lstrcpynW(result,tag_suggestion_original[slot],512);
+  tag_suggestion_update=1;SetWindowTextW(combo,result);
+  SendMessageW(combo,CB_SETEDITSEL,0,MAKELONG((WORD)wcslen(result),(WORD)wcslen(result)));
+  tag_suggestion_update=0;return;
+ }
  lstrcpynW(result,tag_suggestion_original[slot],512);
  wchar_t *comma=wcsrchr(result,L','),*semi=wcsrchr(result,L';');
  wchar_t *separator=comma;if(semi&&(!separator||semi>separator))separator=semi;
