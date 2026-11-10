@@ -352,11 +352,11 @@ static int rename_photo_at(HWND owner,int index){
  if(!_wcsicmp(name,target))return 0;
  wchar_t new_path[MAX_PATH];lstrcpynW(new_path,folder,MAX_PATH);if(!PathAppendW(new_path,target)){MessageBoxW(owner,L"The new file name is too long.",L"Rename photo",MB_ICONERROR);return 0;}
  if(GetFileAttributesW(new_path)!=INVALID_FILE_ATTRIBUTES){MessageBoxW(owner,L"A file with that name already exists in this folder.",L"Rename photo",MB_ICONWARNING);return 0;}
- if(!MoveFileW(old,new_path)){MessageBoxW(owner,L"Windows could not rename the original image.",L"Rename photo",MB_ICONERROR);return 0;}
- if(!catalog_rename(old,new_path)){MoveFileW(new_path,old);MessageBoxW(owner,L"The catalog could not update the renamed photo. The original filename was restored.",L"Rename photo",MB_ICONERROR);return 0;}
+ wchar_t *new_copy=_wcsdup(new_path);if(!new_copy){MessageBoxW(owner,L"Not enough memory to update the catalog path.",L"Rename photo",MB_ICONERROR);return 0;}
+ if(!MoveFileW(old,new_path)){free(new_copy);MessageBoxW(owner,L"Windows could not rename the original image.",L"Rename photo",MB_ICONERROR);return 0;}
+ if(!catalog_rename(old,new_path)){MoveFileW(new_path,old);free(new_copy);MessageBoxW(owner,L"The catalog could not update the renamed photo. The original filename was restored.",L"Rename photo",MB_ICONERROR);return 0;}
  image_invalidate_cache(old);
- free(photo_paths[index]);photo_paths[index]=_wcsdup(new_path);
- if(!photo_paths[index]){MessageBoxW(owner,L"The file was renamed, but the in-memory catalog could not refresh. Please refresh the gallery.",L"Rename photo",MB_ICONWARNING);return 1;}
+ free(photo_paths[index]);photo_paths[index]=new_copy;
  if(owner==viewer_window){SetWindowTextW(owner,PathFindFileNameW(new_path));InvalidateRect(owner,NULL,TRUE);set_viewer_status(L"Original image renamed in its existing folder.");}
  return 1;
 }
