@@ -89,11 +89,11 @@ int catalog_set_tags(const wchar_t *path,const wchar_t *csv){
  if(sqlite3_exec(db,"BEGIN IMMEDIATE",NULL,NULL,NULL)!=SQLITE_OK){free(p);return 0;}
  sqlite3_stmt *s=NULL;int ok=sqlite3_prepare_v2(db,"DELETE FROM PhotoTags WHERE PhotoPath=?1 COLLATE NOCASE",-1,&s,NULL)==SQLITE_OK;
  if(ok){sqlite3_bind_text(s,1,p,-1,SQLITE_TRANSIENT);ok=sqlite3_step(s)==SQLITE_DONE;}sqlite3_finalize(s);s=NULL;
- wchar_t *copy=_wcsdup(csv),*ctx=NULL,*tok=copy?wcstok(copy,L",;",&ctx):NULL;
+ wchar_t *copy=_wcsdup(csv),*ctx=NULL,*tok=copy?wcstok_s(copy,L",;",&ctx):NULL;
  if(!copy)ok=0;
  while(ok&&tok){
-  while(*tok==L' '||*tok==L'\\t')tok++;
-  wchar_t *end=tok+wcslen(tok);while(end>tok&&(end[-1]==L' '||end[-1]==L'\\t'))*--end=0;
+  while(*tok==L' '||*tok==L'\t')tok++;
+  wchar_t *end=tok+wcslen(tok);while(end>tok&&(end[-1]==L' '||end[-1]==L'\t'))*--end=0;
   if(*tok){
    char *t=to_utf8(tok);
    if(!t)ok=0;
@@ -105,7 +105,7 @@ int catalog_set_tags(const wchar_t *path,const wchar_t *csv){
     free(t);
    }
   }
-  tok=wcstok(NULL,L",;",&ctx);
+  tok=wcstok_s(NULL,L",;",&ctx);
  }
  free(copy);free(p);
  if(ok)ok=sqlite3_exec(db,"DELETE FROM Tags WHERE NOT EXISTS(SELECT 1 FROM PhotoTags WHERE PhotoTags.TagId=Tags.Id)",NULL,NULL,NULL)==SQLITE_OK;
@@ -113,11 +113,11 @@ int catalog_set_tags(const wchar_t *path,const wchar_t *csv){
 }
 int catalog_apply_tags(const wchar_t *path,const wchar_t *csv){
  char *p=to_utf8(path);if(!p)return 0;catalog_add(path);sqlite3_exec(db,"BEGIN IMMEDIATE",NULL,NULL,NULL);
- wchar_t *copy=_wcsdup(csv),*ctx=NULL,*tok=wcstok(copy,L",;",&ctx);int count=0;
+ wchar_t *copy=_wcsdup(csv),*ctx=NULL,*tok=wcstok_s(copy,L",;",&ctx);int count=0;
  while(tok){while(*tok==L' '||*tok==L'\t')tok++;wchar_t *end=tok+wcslen(tok);while(end>tok&&(end[-1]==L' '||end[-1]==L'\t'))*--end=0;
  if(*tok){char *t=to_utf8(tok);sqlite3_stmt *s=NULL;if(t&&sqlite3_prepare_v2(db,"INSERT OR IGNORE INTO Tags(Name) VALUES(?1)",-1,&s,NULL)==SQLITE_OK){sqlite3_bind_text(s,1,t,-1,SQLITE_TRANSIENT);sqlite3_step(s);}sqlite3_finalize(s);
  s=NULL;if(t&&sqlite3_prepare_v2(db,"INSERT OR IGNORE INTO PhotoTags(PhotoPath,TagId) SELECT ?1,Id FROM Tags WHERE Name=?2 COLLATE NOCASE",-1,&s,NULL)==SQLITE_OK){sqlite3_bind_text(s,1,p,-1,SQLITE_TRANSIENT);sqlite3_bind_text(s,2,t,-1,SQLITE_TRANSIENT);if(sqlite3_step(s)==SQLITE_DONE)count++;}sqlite3_finalize(s);free(t);}
- tok=wcstok(NULL,L",;",&ctx);}
+ tok=wcstok_s(NULL,L",;",&ctx);}
  free(copy);free(p);sqlite3_exec(db,"COMMIT",NULL,NULL,NULL);return count;
 }
 int catalog_list_tags(wchar_t ***names,int *count){
