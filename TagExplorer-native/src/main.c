@@ -49,7 +49,9 @@
 #define WM_APP_THUMBNAIL_READY (WM_APP+42)
 #define THUMBNAIL_SLOTS 256
 static HWND main_window;
-static HWND viewer_tags_edit,viewer_window,viewer_status;
+static HWND viewer_tags_edit,viewer_tags_label,viewer_window,viewer_status;
+static int tag_suggestion_update;
+static wchar_t tag_suggestion_original[2][512];
 static HACCEL viewer_accel;
 static int viewer_rotation_busy;
 typedef struct { LONG generation; int index; wchar_t path[MAX_PATH]; } ThumbRequest;
@@ -84,6 +86,48 @@ static COLORREF bg_main=RGB(31,31,33),bg_panel=RGB(43,43,46),bg_input=RGB(55,55,
 static COLORREF fg_main=RGB(238,238,240),fg_muted=RGB(151,153,158),accent=RGB(79,174,184);
 
 static void set_status(const wchar_t *s){if(status_text)SetWindowTextW(status_text,s);}
+static int tag_combo_slot(HWND combo){return GetDlgCtrlID(combo)==ID_VIEW_TAGS?1:0;}
+static void tag_combo_update_suggestions(HWND combo){
+ if(!combo||tag_suggestion_update)return;
+ int slot=tag_combo_slot(combo);GetWindowTextW(combo,tag_suggestion_original[slot],512);
+ wchar_t token_text[512];lstrcpynW(token_text,tag_suggestion_original[slot],512);
+ wchar_t *comma=wcsrchr(token_text,L','),*semi=wcsrchr(token_text,L';');
+ wchar_t *separator=comma;if(semi&&(!separator||semi>separator))separator=semi;
+ wchar_t *token=separator?separator+1:token_text;
+ while(*token==L' '||*token==L'\\t')token++;
+ size_t prefix=wcslen(token);
+ tag_suggestion_update=1;SendMessageW(combo,CB_SHOWDROPDOWN,FALSE,0);SendMessageW(combo,CB_RESETCONTENT,0,0);
+ if(prefix){
+  int added=0;
+  for(int i=0;i<tag_name_count&&added<8;i++)if(!_wcsnicmp(tag_names[i],token,(int)prefix)&&_wcsicmp(tag_names[i],token)){SendMessageW(combo,CB_ADDSTRING,0,(LPARAM)tag_names[i]);added++;}
+  if(added)SendMessageW(combo,CB_SHOWDROPDOWN,TRUE,0);
+ }
+ tag_suggestion_update=0;
+}
+static void tag_combo_accept_suggestion(HWND combo){
+ if(!combo||tag_suggestion_update)return;
+ int slot=tag_combo_slot(combo),selected=(int)SendMessageW(combo,CB_GETCURSEL,0,0);if(selected<0)return;
+ wchar_t suggestion[256],result[512];if(SendMessageW(combo,CB_GETLBTEXT,selected,(LPARAM)suggestion)==CB_ERR)return;
+ lstrcpynW(result,tag_suggestion_original[slot],512);
+ wchar_t *comma=wcsrchr(result,L','),*semi=wcsrchr(result,L';');
+ wchar_t *separator=comma;if(semi&&(!separator||semi>separator))separator=semi;
+ wchar_t *token=separator?separator+1:result;
+ while(*token==L' '||*token==L'\\t')token++;
+ size_t keep=(size_t)(token-result);if(keep>=512)return;
+ result[keep]=0;wcsncat(result,suggestion,511-wcslen(result));
+ tag_suggestion_update=1;SetWindowTextW(combo,result);SendMessageW(combo,CB_SETEDITSEL,0,MAKELONG((WORD)wcslen(result),(WORD)wcslen(result)));tag_suggestion_update=0;
+}
+static HWND make_tag_combo(HWND parent,int id,int x,int y,int width,int height){
+ HWND combo=CreateWindowExW(WS_EX_CLIENTEDGE,L"COMBOBOX",L"",WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWN|CBS_AUTOHSCROLL|WS_VSCROLL,x,y,width,height,parent,(HMENU)(INT_PTR)id,app_instance,NULL);
+ if(combo){SendMessageW(combo,WM_SETFONT,(WPARAM)font_ui,TRUE);SendMessageW(combo,CB_SETDROPPEDWIDTH,width,0);}return combo;
+}
+static void viewer_refresh_tags(void){
+ if(!viewer_tags_label||viewer_index<0||viewer_index>=photo_count)return;
+ wchar_t *tags=NULL,text[1024];
+ if(catalog_get_photo_tags(photo_paths[viewer_index],&tags)&&tags&&tags[0])swprintf(text,1024,L"Tags: %s",tags);
+ else lstrcpynW(text,L"Tags: (none)",1024);
+ SetWindowTextW(viewer_tags_label,text);free(tags);
+}
 static void set_viewer_status(const wchar_t *s){if(viewer_status)SetWindowTextW(viewer_status,s);}
 static void free_results(void){if(photo_paths)catalog_free_results(photo_paths,photo_tags,photo_count);photo_paths=photo_tags=NULL;free(photo_image_slots);free(photo_thumbnail_states);photo_image_slots=photo_thumbnail_states=NULL;photo_count=0;}
 static HWND make_label(HWND parent,const wchar_t *text,int x,int y,int w,int h,HFONT font,COLORREF color){
@@ -306,7 +350,7 @@ static void viewer_rename(HWND w){
 static void viewer_apply_date_tag(const wchar_t *tag){
  if(viewer_index<0||viewer_index>=photo_count)return;
  if(catalog_apply_tags(photo_paths[viewer_index],tag)){
-  wchar_t message[128];swprintf(message,128,L"Applied %s to this photo",tag);set_status(message);
+  viewer_refresh_tags();wchar_t message[128];swprintf(message,128,L"Applied %s to this photo",tag);set_viewer_status(message);
  }else set_status(L"Could not apply the date tag to this photo.");
 }
 static int prompt_tag_year(HWND owner,wchar_t *year,size_t capacity){
@@ -344,11 +388,11 @@ static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   make_button(w,L"Rename",ID_VIEW_RENAME,248,12,86,34);
   make_button(w,L"Month tag",ID_VIEW_MONTH_TAG,344,12,100,34);
   make_button(w,L"Year tag",ID_VIEW_YEAR_TAG,452,12,90,34);
-  viewer_tags_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL,550,12,260,34,w,(HMENU)(INT_PTR)ID_VIEW_TAGS,app_instance,NULL);
-  SendMessageW(viewer_tags_edit,WM_SETFONT,(WPARAM)font_ui,TRUE);
+  viewer_tags_edit=make_tag_combo(w,ID_VIEW_TAGS,550,12,260,260);
   make_button(w,L"Add tags",ID_VIEW_APPLY_TAGS,820,12,96,34);
   make_button(w,L"Previous",ID_VIEW_PREVIOUS,924,12,82,34);
   make_button(w,L"Next",ID_VIEW_NEXT,1014,12,68,34);
+  viewer_tags_label=make_label(w,L"Tags: (none)",16,54,1000,42,font_small,fg_muted);
   viewer_status=make_label(w,L"Ready",16,0,520,22,font_small,fg_muted);
   return 0;
  case WM_SIZE:{
@@ -357,7 +401,8 @@ static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   MoveWindow(GetDlgItem(w,ID_VIEW_RENAME),248,12,86,34,TRUE);
   MoveWindow(GetDlgItem(w,ID_VIEW_MONTH_TAG),344,12,100,34,TRUE);
   MoveWindow(GetDlgItem(w,ID_VIEW_YEAR_TAG),452,12,90,34,TRUE);
-  MoveWindow(viewer_tags_edit,550,12,width-838>100?width-838:100,34,TRUE);
+  MoveWindow(viewer_tags_edit,550,12,width-838>100?width-838:100,260,TRUE);
+  if(viewer_tags_label)MoveWindow(viewer_tags_label,16,54,width-32>200?width-32:200,42,TRUE);
   MoveWindow(GetDlgItem(w,ID_VIEW_APPLY_TAGS),width-276,12,88,34,TRUE);
   MoveWindow(GetDlgItem(w,ID_VIEW_PREVIOUS),width-180,12,82,34,TRUE);
   MoveWindow(GetDlgItem(w,ID_VIEW_NEXT),width-90,12,74,34,TRUE);
@@ -378,17 +423,18 @@ static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
     else CloseHandle(thread);
     SetFocus(w);return 0;
    }
-   case ID_VIEW_PREVIOUS:if(photo_count){viewer_index=(viewer_index+photo_count-1)%photo_count;viewer_rotation=0;SetWindowTextW(w,PathFindFileNameW(photo_paths[viewer_index]));InvalidateRect(w,NULL,TRUE);}SetFocus(w);return 0;
-   case ID_VIEW_NEXT:if(photo_count){viewer_index=(viewer_index+1)%photo_count;viewer_rotation=0;SetWindowTextW(w,PathFindFileNameW(photo_paths[viewer_index]));InvalidateRect(w,NULL,TRUE);}SetFocus(w);return 0;
+   case ID_VIEW_PREVIOUS:if(photo_count){viewer_index=(viewer_index+photo_count-1)%photo_count;viewer_rotation=0;SetWindowTextW(w,PathFindFileNameW(photo_paths[viewer_index]));viewer_refresh_tags();InvalidateRect(w,NULL,TRUE);}SetFocus(w);return 0;
+   case ID_VIEW_NEXT:if(photo_count){viewer_index=(viewer_index+1)%photo_count;viewer_rotation=0;SetWindowTextW(w,PathFindFileNameW(photo_paths[viewer_index]));viewer_refresh_tags();InvalidateRect(w,NULL,TRUE);}SetFocus(w);return 0;
    case ID_VIEW_RENAME:viewer_rename(w);SetFocus(w);return 0;
    case ID_VIEW_MONTH_TAG:viewer_choose_month_tag(w);SetFocus(w);return 0;
    case ID_VIEW_YEAR_TAG:viewer_enter_year_tag(w);SetFocus(w);return 0;
-   case ID_VIEW_APPLY_TAGS:{wchar_t tags[512];GetWindowTextW(viewer_tags_edit,tags,512);if(tags[0]&&catalog_apply_tags(photo_paths[viewer_index],tags)){SetWindowTextW(viewer_tags_edit,L"");set_status(L"Tags added to this photo.");}else set_status(L"Enter one or more comma-separated tags.");return 0;}
+   case ID_VIEW_APPLY_TAGS:{wchar_t tags[512];GetWindowTextW(viewer_tags_edit,tags,512);if(viewer_index>=0&&viewer_index<photo_count&&tags[0]&&catalog_apply_tags(photo_paths[viewer_index],tags)){SetWindowTextW(viewer_tags_edit,L"");viewer_refresh_tags();set_viewer_status(L"Tags added to this photo.");}else set_viewer_status(L"Enter one or more comma-separated tags.");return 0;}
+   case ID_VIEW_TAGS:if(HIWORD(wp)==CBN_EDITCHANGE){tag_combo_update_suggestions(viewer_tags_edit);return 0;}if(HIWORD(wp)==CBN_SELENDOK){tag_combo_accept_suggestion(viewer_tags_edit);return 0;}break;
   }break;
  case WM_KEYDOWN:
   if(wp==VK_ESCAPE){DestroyWindow(w);return 0;}
-  if(wp==VK_RIGHT&&photo_count){viewer_index=(viewer_index+1)%photo_count;viewer_rotation=0;SetWindowTextW(w,PathFindFileNameW(photo_paths[viewer_index]));InvalidateRect(w,NULL,TRUE);return 0;}
-  if(wp==VK_LEFT&&photo_count){viewer_index=(viewer_index+photo_count-1)%photo_count;viewer_rotation=0;SetWindowTextW(w,PathFindFileNameW(photo_paths[viewer_index]));InvalidateRect(w,NULL,TRUE);return 0;}
+  if(wp==VK_RIGHT&&photo_count){viewer_index=(viewer_index+1)%photo_count;viewer_rotation=0;SetWindowTextW(w,PathFindFileNameW(photo_paths[viewer_index]));viewer_refresh_tags();InvalidateRect(w,NULL,TRUE);return 0;}
+  if(wp==VK_LEFT&&photo_count){viewer_index=(viewer_index+photo_count-1)%photo_count;viewer_rotation=0;SetWindowTextW(w,PathFindFileNameW(photo_paths[viewer_index]));viewer_refresh_tags();InvalidateRect(w,NULL,TRUE);return 0;}
   if(wp=='R'){viewer_rotation=(viewer_rotation+90)%360;InvalidateRect(w,NULL,TRUE);}return 0;
  case WM_APP_ROTATE_COMPLETE:{
   RotateJob *job=(RotateJob*)lp;viewer_rotation_busy=0;
@@ -403,15 +449,15 @@ static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   }
   free(job);SetFocus(w);return 0;
  }
- case WM_DESTROY:if(viewer_window==w)viewer_window=NULL;viewer_status=NULL;InterlockedExchange(&viewer_rotation_busy,0);image_invalidate_cache(NULL);if(main_window&&IsWindow(main_window))refresh_catalog();return 0;
- case WM_PAINT:{PAINTSTRUCT ps;HDC dc=BeginPaint(w,&ps);RECT rc;GetClientRect(w,&rc);FillRect(dc,&rc,(HBRUSH)GetStockObject(BLACK_BRUSH));rc.top+=58;if(photo_count)image_draw(dc,&rc,photo_paths[viewer_index],viewer_rotation);EndPaint(w,&ps);return 0;}
+ case WM_DESTROY:if(viewer_window==w)viewer_window=NULL;viewer_status=NULL;viewer_tags_label=NULL;InterlockedExchange(&viewer_rotation_busy,0);image_invalidate_cache(NULL);if(main_window&&IsWindow(main_window))refresh_catalog();return 0;
+ case WM_PAINT:{PAINTSTRUCT ps;HDC dc=BeginPaint(w,&ps);RECT rc;GetClientRect(w,&rc);FillRect(dc,&rc,(HBRUSH)GetStockObject(BLACK_BRUSH));rc.top+=104;if(photo_count)image_draw(dc,&rc,photo_paths[viewer_index],viewer_rotation);EndPaint(w,&ps);return 0;}
  }return DefWindowProcW(w,msg,wp,lp);
 }
 static void show_viewer(void){
  int i=ListView_GetNextItem(photo_list,-1,LVNI_SELECTED);if(i<0)return;
  WNDCLASSW wc={0};wc.lpfnWndProc=viewer_proc;wc.hInstance=app_instance;wc.lpszClassName=VIEWER_CLASS;wc.hCursor=LoadCursorW(NULL,IDC_ARROW);wc.hbrBackground=(HBRUSH)GetStockObject(BLACK_BRUSH);RegisterClassW(&wc);
  HWND v=CreateWindowExW(WS_EX_APPWINDOW,VIEWER_CLASS,PathFindFileNameW(photo_paths[i]),WS_OVERLAPPEDWINDOW|WS_VISIBLE,CW_USEDEFAULT,CW_USEDEFAULT,1100,760,main_window,NULL,app_instance,NULL);
- viewer_window=v;viewer_index=i;viewer_rotation=0;ShowWindow(v,SW_MAXIMIZE);SetFocus(v);
+ viewer_window=v;viewer_index=i;viewer_rotation=0;viewer_refresh_tags();ShowWindow(v,SW_MAXIMIZE);SetFocus(v);
 }
 static void layout_children(int width,int height){
  int content=width-SIDEBAR_W;if(content<360)content=360;
@@ -467,8 +513,7 @@ static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   address_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL,0,0,600,32,w,(HMENU)(INT_PTR)ID_ADDRESS,app_instance,NULL);
   SendMessageW(address_edit,WM_SETFONT,(WPARAM)font_ui,TRUE);SendMessageW(address_edit,EM_SETCUEBANNER,TRUE,(LPARAM)L"Enter a folder or image path, then press Go");
   make_button(w,L"Go",ID_NAVIGATE,0,0,64,32);
-  tag_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL,0,0,250,32,w,(HMENU)(INT_PTR)ID_TAG,app_instance,NULL);
-  SendMessageW(tag_edit,WM_SETFONT,(WPARAM)font_ui,TRUE);
+  tag_edit=make_tag_combo(w,ID_TAG,0,0,250,260);
   make_button(w,L"Apply tags",ID_APPLY_TAGS,0,0,100,32);
   make_button(w,L"Open photo",ID_OPEN,0,0,100,32);
   make_button(w,L"Month tag",ID_MONTH_TAG,0,0,104,32);
@@ -488,7 +533,7 @@ static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   MoveWindow(GetDlgItem(w,ID_REFRESH),width-120,17,82,32,TRUE);
   MoveWindow(address_edit,SIDEBAR_W+22,TOP_H+5,width-SIDEBAR_W-132,32,TRUE);
   MoveWindow(GetDlgItem(w,ID_NAVIGATE),width-92,TOP_H+5,70,32,TRUE);
-  MoveWindow(tag_edit,SIDEBAR_W+22,TOP_H+48,260,32,TRUE);
+  MoveWindow(tag_edit,SIDEBAR_W+22,TOP_H+48,260,260,TRUE);
   MoveWindow(GetDlgItem(w,ID_APPLY_TAGS),SIDEBAR_W+292,TOP_H+48,104,32,TRUE);
   MoveWindow(GetDlgItem(w,ID_OPEN),SIDEBAR_W+406,TOP_H+48,100,32,TRUE);
   MoveWindow(GetDlgItem(w,ID_MONTH_TAG),SIDEBAR_W+516,TOP_H+48,104,32,TRUE);
@@ -497,7 +542,7 @@ static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   MoveWindow(GetDlgItem(w,ID_SHELL),20,height-52,238,36,TRUE);
   }return 0;
  case WM_COMMAND:
-  switch(LOWORD(wp)){case ID_ADD_FOLDER:browse_folder();break;case ID_ADD_FILES:add_files();break;case ID_REFRESH:refresh_catalog();break;case ID_NAVIGATE:navigate_address();break;case ID_APPLY_TAGS:apply_tags();break;case ID_OPEN:show_viewer();break;case ID_MONTH_TAG:choose_month_tag(w);break;case ID_YEAR_TAG:enter_year_tag(w);break;case ID_SHELL:install_shell_menu();break;case ID_SEARCH:if(HIWORD(wp)==EN_CHANGE){}break;case ID_SOURCE_LIST:if(HIWORD(wp)==LBN_SELCHANGE){active_tag[0]=0;SendMessageW(tag_list,LB_SETCURSEL,0,0);refresh_catalog();}break;case ID_TAG_LIST:if(HIWORD(wp)==LBN_SELCHANGE){int sel=(int)SendMessageW(tag_list,LB_GETCURSEL,0,0);if(sel<=0)active_tag[0]=0;else if(sel-1<tag_name_count)lstrcpynW(active_tag,tag_names[sel-1],256);refresh_catalog();}break;}return 0;
+  switch(LOWORD(wp)){case ID_ADD_FOLDER:browse_folder();break;case ID_ADD_FILES:add_files();break;case ID_REFRESH:refresh_catalog();break;case ID_NAVIGATE:navigate_address();break;case ID_APPLY_TAGS:apply_tags();break;case ID_OPEN:show_viewer();break;case ID_MONTH_TAG:choose_month_tag(w);break;case ID_YEAR_TAG:enter_year_tag(w);break;case ID_SHELL:install_shell_menu();break;case ID_SEARCH:if(HIWORD(wp)==EN_CHANGE){}break;case ID_TAG:if(HIWORD(wp)==CBN_EDITCHANGE){tag_combo_update_suggestions(tag_edit);break;}if(HIWORD(wp)==CBN_SELENDOK){tag_combo_accept_suggestion(tag_edit);break;}break;case ID_SOURCE_LIST:if(HIWORD(wp)==LBN_SELCHANGE){active_tag[0]=0;SendMessageW(tag_list,LB_SETCURSEL,0,0);refresh_catalog();}break;case ID_TAG_LIST:if(HIWORD(wp)==LBN_SELCHANGE){int sel=(int)SendMessageW(tag_list,LB_GETCURSEL,0,0);if(sel<=0)active_tag[0]=0;else if(sel-1<tag_name_count)lstrcpynW(active_tag,tag_names[sel-1],256);refresh_catalog();}break;}return 0;
  case WM_KEYDOWN:if(wp==VK_RETURN&&GetFocus()==address_edit){navigate_address();return 0;}break;
  case WM_APP_THUMBNAIL_READY:accept_thumbnail((ThumbReady*)lp);return 0;
  case WM_NOTIFY:
