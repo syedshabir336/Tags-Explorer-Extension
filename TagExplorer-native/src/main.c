@@ -90,6 +90,7 @@ static int tag_combo_slot(HWND combo){return GetDlgCtrlID(combo)==ID_VIEW_TAGS?1
 static void tag_combo_update_suggestions(HWND combo){
  if(!combo||tag_suggestion_update)return;
  int slot=tag_combo_slot(combo);GetWindowTextW(combo,tag_suggestion_original[slot],512);
+ DWORD edit_selection=(DWORD)SendMessageW(combo,CB_GETEDITSEL,0,0);
  wchar_t token_text[512];lstrcpynW(token_text,tag_suggestion_original[slot],512);
  wchar_t *comma=wcsrchr(token_text,L','),*semi=wcsrchr(token_text,L';');
  wchar_t *separator=comma;if(semi&&(!separator||semi>separator))separator=semi;
@@ -97,6 +98,8 @@ static void tag_combo_update_suggestions(HWND combo){
  while(*token==L' '||*token==L'\t')token++;
  size_t prefix=wcslen(token);
  tag_suggestion_update=1;SendMessageW(combo,CB_SHOWDROPDOWN,FALSE,0);SendMessageW(combo,CB_RESETCONTENT,0,0);
+ SetWindowTextW(combo,tag_suggestion_original[slot]);
+ SendMessageW(combo,CB_SETEDITSEL,0,MAKELONG(LOWORD(edit_selection),HIWORD(edit_selection)));
  if(prefix){
   int added=0;
   for(int i=0;i<tag_name_count&&added<8;i++)if(!_wcsnicmp(tag_names[i],token,(int)prefix)&&_wcsicmp(tag_names[i],token)){SendMessageW(combo,CB_ADDSTRING,0,(LPARAM)tag_names[i]);added++;}
