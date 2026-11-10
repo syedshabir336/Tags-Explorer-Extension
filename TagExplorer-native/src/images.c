@@ -34,7 +34,7 @@ static int g_thumb_cache_ready;
 static void thumbnail_cache_init(void){
  if(g_thumb_cache_ready)return;g_thumb_cache_ready=1;
  if(!GetEnvironmentVariableW(L"LOCALAPPDATA",g_thumb_cache_dir,MAX_PATH))return;
- if(!PathAppendW(g_thumb_cache_dir,L"TagExplorer\\ThumbCache"))return;
+ if(!PathAppendW(g_thumb_cache_dir,L"TagExplorer\\ThumbCache")){g_thumb_cache_dir[0]=0;return;}
  wchar_t parent[MAX_PATH];lstrcpynW(parent,g_thumb_cache_dir,MAX_PATH);PathRemoveFileSpecW(parent);CreateDirectoryW(parent,NULL);CreateDirectoryW(g_thumb_cache_dir,NULL);
 }
 static uint64_t thumbnail_hash(const wchar_t *path,const WIN32_FILE_ATTRIBUTE_DATA *a,UINT edge){
