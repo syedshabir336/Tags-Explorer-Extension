@@ -334,21 +334,58 @@ static int prompt_value(HWND owner,const wchar_t *title,const wchar_t *label,con
  lstrcpynW(new_name,rename_input,(int)capacity);return 1;
 }
 static int prompt_rename(HWND owner,const wchar_t *current_name,wchar_t *new_name,size_t capacity){return prompt_value(owner,L"Rename original image",L"New file name (the original image will be renamed in place):",current_name,new_name,capacity);}
-static void viewer_rename(HWND w){
- if(viewer_index<0||viewer_index>=photo_count)return;
+static int rename_photo_at(HWND owner,int index){
+ if(index<0||index>=photo_count)return 0;
  wchar_t old[MAX_PATH],folder[MAX_PATH],name[MAX_PATH],target[MAX_PATH];
- lstrcpynW(old,photo_paths[viewer_index],MAX_PATH);lstrcpynW(folder,old,MAX_PATH);PathRemoveFileSpecW(folder);
+ lstrcpynW(old,photo_paths[index],MAX_PATH);lstrcpynW(folder,old,MAX_PATH);PathRemoveFileSpecW(folder);
  lstrcpynW(name,PathFindFileNameW(old),MAX_PATH);
- if(!prompt_rename(w,name,target,MAX_PATH))return;
- if(wcschr(target,L'\\')||wcschr(target,L'/')||wcschr(target,L':')){MessageBoxW(w,L"Enter only a file name, not a folder path.",L"Rename photo",MB_ICONWARNING);return;}
- if(!_wcsicmp(name,target))return;
- wchar_t new_path[MAX_PATH];lstrcpynW(new_path,folder,MAX_PATH);if(!PathAppendW(new_path,target)){MessageBoxW(w,L"The new file name is too long.",L"Rename photo",MB_ICONERROR);return;}
- if(GetFileAttributesW(new_path)!=INVALID_FILE_ATTRIBUTES){MessageBoxW(w,L"A file with that name already exists in this folder.",L"Rename photo",MB_ICONWARNING);return;}
- /* MoveFileW performs a same-folder rename; it does not encode, save, or copy image data. */
- if(!MoveFileW(old,new_path)){MessageBoxW(w,L"Windows could not rename the original image.",L"Rename photo",MB_ICONERROR);return;}
- if(!catalog_rename(old,new_path)){MoveFileW(new_path,old);MessageBoxW(w,L"The catalog could not update the renamed photo. The original filename was restored.",L"Rename photo",MB_ICONERROR);return;}
- free(photo_paths[viewer_index]);photo_paths[viewer_index]=_wcsdup(new_path);
- SetWindowTextW(w,PathFindFileNameW(new_path));set_status(L"Original image renamed in its existing folder.");InvalidateRect(w,NULL,TRUE);
+ if(!prompt_rename(owner,name,target,MAX_PATH))return 0;
+ if(wcschr(target,L'\\')||wcschr(target,L'/')||wcschr(target,L':')){MessageBoxW(owner,L"Enter only a file name, not a folder path.",L"Rename photo",MB_ICONWARNING);return 0;}
+ if(!_wcsicmp(name,target))return 0;
+ wchar_t new_path[MAX_PATH];lstrcpynW(new_path,folder,MAX_PATH);if(!PathAppendW(new_path,target)){MessageBoxW(owner,L"The new file name is too long.",L"Rename photo",MB_ICONERROR);return 0;}
+ if(GetFileAttributesW(new_path)!=INVALID_FILE_ATTRIBUTES){MessageBoxW(owner,L"A file with that name already exists in this folder.",L"Rename photo",MB_ICONWARNING);return 0;}
+ if(!MoveFileW(old,new_path)){MessageBoxW(owner,L"Windows could not rename the original image.",L"Rename photo",MB_ICONERROR);return 0;}
+ if(!catalog_rename(old,new_path)){MoveFileW(new_path,old);MessageBoxW(owner,L"The catalog could not update the renamed photo. The original filename was restored.",L"Rename photo",MB_ICONERROR);return 0;}
+ image_invalidate_cache(old);
+ free(photo_paths[index]);photo_paths[index]=_wcsdup(new_path);
+ if(!photo_paths[index]){MessageBoxW(owner,L"The file was renamed, but the in-memory catalog could not refresh. Please refresh the gallery.",L"Rename photo",MB_ICONWARNING);return 1;}
+ if(owner==viewer_window){SetWindowTextW(owner,PathFindFileNameW(new_path));InvalidateRect(owner,NULL,TRUE);set_viewer_status(L"Original image renamed in its existing folder.");}
+ return 1;
+}
+static void viewer_rename(HWND w){if(rename_photo_at(w,viewer_index))set_viewer_status(L"Original image renamed in its existing folder.");}
+static void rename_selected_photo(HWND owner){
+ int index=ListView_GetNextItem(photo_list,-1,LVNI_SELECTED);
+ if(index<0){set_status(L"Select an image to rename.");return;}
+ if(rename_photo_at(owner,index)){refresh_catalog();set_status(L"Original image renamed in its existing folder.");}
+}
+static void set_selected_files_on_clipboard(int move_files){
+ int count=0;size_t chars=1;
+ for(int i=ListView_GetNextItem(photo_list,-1,LVNI_SELECTED);i>=0;i=ListView_GetNextItem(photo_list,i,LVNI_SELECTED)){
+  size_t n=wcslen(photo_paths[i])+1;if(chars>SIZE_MAX-n){set_status(L"Too many selected files for the Windows clipboard.");return;}chars+=n;count++;
+ }
+ if(!count){set_status(L"Select one or more images first.");return;}
+ SIZE_T bytes=sizeof(DROPFILES)+chars*sizeof(wchar_t);
+ HGLOBAL files=GlobalAlloc(GMEM_MOVEABLE|GMEM_ZEROINIT,bytes);if(!files){set_status(L"Could not allocate Windows clipboard data.");return;}
+ DROPFILES *drop=(DROPFILES*)GlobalLock(files);if(!drop){GlobalFree(files);set_status(L"Could not prepare the Windows file clipboard.");return;}
+ drop->pFiles=sizeof(DROPFILES);drop->fWide=TRUE;wchar_t *out=(wchar_t*)((BYTE*)drop+sizeof(DROPFILES));
+ for(int i=ListView_GetNextItem(photo_list,-1,LVNI_SELECTED);i>=0;i=ListView_GetNextItem(photo_list,i,LVNI_SELECTED)){
+  size_t n=wcslen(photo_paths[i])+1;memcpy(out,photo_paths[i],n*sizeof(wchar_t));out+=n;
+ }
+ *out=0;GlobalUnlock(files);
+ HGLOBAL effect=GlobalAlloc(GMEM_MOVEABLE|GMEM_ZEROINIT,sizeof(DWORD));if(!effect){GlobalFree(files);set_status(L"Could not allocate the Explorer clipboard effect.");return;}
+ DWORD *effect_value=(DWORD*)GlobalLock(effect);if(!effect_value){GlobalFree(files);GlobalFree(effect);set_status(L"Could not prepare the Explorer clipboard effect.");return;}
+ *effect_value=move_files?DROPEFFECT_MOVE:DROPEFFECT_COPY;GlobalUnlock(effect);
+ if(!OpenClipboard(main_window)){GlobalFree(files);GlobalFree(effect);set_status(L"Windows clipboard is busy. Try again.");return;}
+ EmptyClipboard();HANDLE file_result=SetClipboardData(CF_HDROP,files);
+ if(!file_result){CloseClipboard();GlobalFree(files);GlobalFree(effect);set_status(L"Windows could not publish the selected files to the clipboard.");return;}
+ HANDLE effect_result=preferred_drop_effect_format?SetClipboardData(preferred_drop_effect_format,effect):NULL;
+ if(!effect_result)GlobalFree(effect);
+ CloseClipboard();
+ for(int i=0;i<photo_count;i++)ListView_SetItemState(photo_list,i,0,LVIS_CUT);
+ if(move_files&&effect_result)for(int i=ListView_GetNextItem(photo_list,-1,LVNI_SELECTED);i>=0;i=ListView_GetNextItem(photo_list,i,LVNI_SELECTED))ListView_SetItemState(photo_list,i,LVIS_CUT,LVIS_CUT);
+ own_clipboard_sequence=GetClipboardSequenceNumber();
+ wchar_t message[128];swprintf(message,128,L"%s %d original file(s) to the Windows clipboard.",move_files&&effect_result?L"Cut":L"Copied",count);set_status(message);
+ if(move_files&&!effect_result)set_status(L"Files copied to the clipboard, but Windows did not accept the Cut/move preference.");
 }
 static void viewer_apply_date_tag(const wchar_t *tag){
  if(viewer_index<0||viewer_index>=photo_count)return;
