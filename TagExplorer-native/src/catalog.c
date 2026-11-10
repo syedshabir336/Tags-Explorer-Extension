@@ -123,4 +123,11 @@ int catalog_search(const wchar_t *query,const wchar_t *tag_filter,wchar_t ***pat
  if(!ok){catalog_free_results(*paths,*tags,*count);*paths=NULL;*tags=NULL;*count=0;}
  return ok;
 }
+int catalog_get_photo_tags(const wchar_t *path,wchar_t **tags){
+ if(tags)*tags=NULL;if(!db||!path||!tags)return 0;
+ char *p=to_utf8(path);if(!p)return 0;sqlite3_stmt *s=NULL;
+ int ok=sqlite3_prepare_v2(db,"SELECT COALESCE((SELECT group_concat(t.Name, ', ') FROM Tags t JOIN PhotoTags pt ON pt.TagId=t.Id WHERE pt.PhotoPath=?1 COLLATE NOCASE),'')",-1,&s,NULL)==SQLITE_OK;
+ if(ok){sqlite3_bind_text(s,1,p,-1,SQLITE_TRANSIENT);ok=sqlite3_step(s)==SQLITE_ROW;if(ok)*tags=to_wide(sqlite3_column_text(s,0));}
+ sqlite3_finalize(s);free(p);return ok&&*tags!=NULL;
+}
 void catalog_free_results(wchar_t **p,wchar_t **t,int n){for(int i=0;i<n;i++){free(p[i]);free(t[i]);}free(p);free(t);}
