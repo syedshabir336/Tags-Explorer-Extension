@@ -99,11 +99,11 @@ int catalog_list_tags(wchar_t ***names,int *count){
   wchar_t **next=(wchar_t**)realloc(*names,(size_t)(*count+1)*sizeof(wchar_t*));if(!next){free(name);ok=0;break;}*names=next;(*names)[(*count)++]=name;
  }sqlite3_finalize(s);return ok;
 }
-int catalog_search(const wchar_t *query,const wchar_t *tag_filter,wchar_t ***paths,wchar_t ***tags,int *count){
+int catalog_search(const wchar_t *query,const wchar_t *tag_filter,int no_tags,wchar_t ***paths,wchar_t ***tags,int *count){
  *paths=NULL;*tags=NULL;*count=0;char *q=to_utf8(query?query:L""),*tag=to_utf8(tag_filter?tag_filter:L"");if(!q||!tag){free(q);free(tag);return 0;}
- const char *statement="SELECT i.Path,COALESCE((SELECT group_concat(t.Name,', ') FROM Tags t JOIN PhotoTags pt ON pt.TagId=t.Id WHERE pt.PhotoPath=i.Path),'') FROM Images i WHERE (?1='' OR i.Path LIKE ?2 OR EXISTS(SELECT 1 FROM PhotoTags p JOIN Tags t ON t.Id=p.TagId WHERE p.PhotoPath=i.Path AND t.Name LIKE ?2)) AND (?3='' OR EXISTS(SELECT 1 FROM PhotoTags p2 JOIN Tags t2 ON t2.Id=p2.TagId WHERE p2.PhotoPath=i.Path AND t2.Name=?3 COLLATE NOCASE)) ORDER BY i.Path";
+ const char *statement="SELECT i.Path,COALESCE((SELECT group_concat(t.Name,', ') FROM Tags t JOIN PhotoTags pt ON pt.TagId=t.Id WHERE pt.PhotoPath=i.Path),'') FROM Images i WHERE (?1='' OR i.Path LIKE ?2 OR EXISTS(SELECT 1 FROM PhotoTags p JOIN Tags t ON t.Id=p.TagId WHERE p.PhotoPath=i.Path AND t.Name LIKE ?2)) AND (?3='' OR EXISTS(SELECT 1 FROM PhotoTags p2 JOIN Tags t2 ON t2.Id=p2.TagId WHERE p2.PhotoPath=i.Path AND t2.Name=?3 COLLATE NOCASE)) AND (?4=0 OR NOT EXISTS(SELECT 1 FROM PhotoTags p3 WHERE p3.PhotoPath=i.Path)) ORDER BY i.Path";
  sqlite3_stmt *s=NULL;int ok=sqlite3_prepare_v2(db,statement,-1,&s,NULL)==SQLITE_OK;int capacity=0;
- if(ok){size_t z=strlen(q)+3;char *like=(char*)malloc(z);if(!like)ok=0;else{snprintf(like,z,"%%%s%%",q);sqlite3_bind_text(s,1,q,-1,SQLITE_TRANSIENT);sqlite3_bind_text(s,2,like,-1,SQLITE_TRANSIENT);sqlite3_bind_text(s,3,tag,-1,SQLITE_TRANSIENT);free(like);
+ if(ok){size_t z=strlen(q)+3;char *like=(char*)malloc(z);if(!like)ok=0;else{snprintf(like,z,"%%%s%%",q);sqlite3_bind_text(s,1,q,-1,SQLITE_TRANSIENT);sqlite3_bind_text(s,2,like,-1,SQLITE_TRANSIENT);sqlite3_bind_text(s,3,tag,-1,SQLITE_TRANSIENT);sqlite3_bind_int(s,4,no_tags?1:0);free(like);
   while(sqlite3_step(s)==SQLITE_ROW){
    wchar_t *wp=to_wide(sqlite3_column_text(s,0));if(!wp)continue;
    if(GetFileAttributesW(wp)==INVALID_FILE_ATTRIBUTES){free(wp);continue;}
