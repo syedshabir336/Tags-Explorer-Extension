@@ -208,7 +208,7 @@ static void refresh_catalog(void){
  ListView_SetItemCountEx(photo_list,photo_count,LVSICF_NOINVALIDATEALL|LVSICF_NOSCROLL);
  if(photo_count)ListView_RedrawItems(photo_list,0,photo_count-1);
  refresh_tag_list();
- wchar_t message[160];if(active_tag[0])swprintf(message,160,L"%d photos tagged '%s'",photo_count,active_tag);else swprintf(message,160,L"%d photos",photo_count);set_status(message);
+ wchar_t message[160];if(no_tags_filter)swprintf(message,160,L"%d photos without tags",photo_count);else if(active_tag[0])swprintf(message,160,L"%d photos tagged '%s'",photo_count,active_tag);else swprintf(message,160,L"%d photos",photo_count);set_status(message);
 }
 static void enqueue_thumbnail(int index){
  if(index<0||index>=photo_count||!photo_paths||!photo_thumbnail_states||!thumbnail_thread||!thumbnail_event||photo_thumbnail_states[index])return;
@@ -382,7 +382,7 @@ static void set_selected_files_on_clipboard(int move_files){
  *out=0;GlobalUnlock(files);
  HGLOBAL effect=GlobalAlloc(GMEM_MOVEABLE|GMEM_ZEROINIT,sizeof(DWORD));if(!effect){GlobalFree(files);set_status(L"Could not allocate the Explorer clipboard effect.");return;}
  DWORD *effect_value=(DWORD*)GlobalLock(effect);if(!effect_value){GlobalFree(files);GlobalFree(effect);set_status(L"Could not prepare the Explorer clipboard effect.");return;}
- *effect_value=move_files?DROPEFFECT_MOVE:DROPEFFECT_COPY;GlobalUnlock(effect);
+ *effect_value=move_files?2u:1u; /* DROPEFFECT_MOVE / DROPEFFECT_COPY */GlobalUnlock(effect);
  if(!OpenClipboard(main_window)){GlobalFree(files);GlobalFree(effect);set_status(L"Windows clipboard is busy. Try again.");return;}
  EmptyClipboard();HANDLE file_result=SetClipboardData(CF_HDROP,files);
  if(!file_result){CloseClipboard();GlobalFree(files);GlobalFree(effect);set_status(L"Windows could not publish the selected files to the clipboard.");return;}
