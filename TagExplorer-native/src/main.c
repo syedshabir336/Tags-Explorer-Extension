@@ -3,10 +3,12 @@
 #include <commctrl.h>
 #include <commdlg.h>
 #include <shlobj.h>
+#include <shellapi.h>
 #include <shlwapi.h>
 #include <uxtheme.h>
 #include <wchar.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <stdio.h>
 #include "resource.h"
 #include "catalog.h"
@@ -35,6 +37,9 @@
 #define ID_NAVIGATE 1115
 #define ID_MONTH_TAG 1116
 #define ID_YEAR_TAG 1117
+#define ID_RENAME_SELECTED 1118
+#define ID_CUT_SELECTED 1119
+#define ID_COPY_SELECTED 1120
 #define ID_MONTH_FIRST 2101
 #define ID_VIEW_ROTATE_LEFT 1201
 #define ID_VIEW_ROTATE_RIGHT 1202
@@ -79,6 +84,9 @@ static HWND title_label,subtitle_label,brand_label,source_heading,tag_heading;
 static wchar_t **photo_paths,**photo_tags,**tag_names;
 static int tag_name_count;
 static wchar_t active_tag[256];
+static int no_tags_filter;
+static UINT preferred_drop_effect_format;
+static DWORD own_clipboard_sequence;
 static int photo_count,viewer_index,viewer_rotation;
 static HIMAGELIST thumbnail_list;
 static HFONT font_ui,font_small,font_title;
@@ -156,7 +164,7 @@ static int tag_is_month_key(const wchar_t *tag){
 static void refresh_tag_list(void){
  static const wchar_t *months[]={L"January",L"February",L"March",L"April",L"May",L"June",L"July",L"August",L"September",L"October",L"November",L"December"};
  if(tag_names){for(int i=0;i<tag_name_count;i++)free(tag_names[i]);free(tag_names);tag_names=NULL;tag_name_count=0;}
- SendMessageW(tag_list,LB_RESETCONTENT,0,0);SendMessageW(tag_list,LB_ADDSTRING,0,(LPARAM)L"All tags");
+ SendMessageW(tag_list,LB_RESETCONTENT,0,0);SendMessageW(tag_list,LB_ADDSTRING,0,(LPARAM)L"All tags");SendMessageW(tag_list,LB_ADDSTRING,0,(LPARAM)L"No tags");
  wchar_t **db_names=NULL;int db_count=0;
  if(catalog_list_tags(&db_names,&db_count)){
   /* Each year is a selectable parent; its month entries carry that year in
@@ -180,7 +188,7 @@ static void refresh_tag_list(void){
   }
   for(int i=0;i<db_count;i++)free(db_names[i]);free(db_names);
  }
- int selected=0;if(active_tag[0])for(int i=0;i<tag_name_count;i++)if(!_wcsicmp(active_tag,tag_names[i])){selected=i+1;break;}
+ int selected=no_tags_filter?1:0;if(active_tag[0])for(int i=0;i<tag_name_count;i++)if(!_wcsicmp(active_tag,tag_names[i])){selected=i+2;break;}
  SendMessageW(tag_list,LB_SETCURSEL,selected,0);
 }
 static void refresh_catalog(void){
@@ -191,7 +199,7 @@ static void refresh_catalog(void){
  ListView_SetItemCountEx(photo_list,0,LVSICF_NOINVALIDATEALL|LVSICF_NOSCROLL);
  free_results();ImageList_RemoveAll(thumbnail_list);thumbnail_slot_count=thumbnail_next_slot=0;for(int si=0;si<THUMBNAIL_SLOTS;si++)slot_photo[si]=-1;
  wchar_t query[512];GetWindowTextW(search_edit,query,512);
- if(!catalog_search(query,active_tag,&photo_paths,&photo_tags,&photo_count)){set_status(L"Unable to read the photo catalog.");return;}
+ if(!catalog_search(query,active_tag,no_tags_filter,&photo_paths,&photo_tags,&photo_count)){set_status(L"Unable to read the photo catalog.");return;}
  if(photo_count){
   photo_image_slots=(int*)malloc((size_t)photo_count*sizeof(int));
   photo_thumbnail_states=(int*)calloc((size_t)photo_count,sizeof(int));
@@ -274,7 +282,7 @@ static void navigate_address(void){
  DWORD attr=GetFileAttributesW(path);if(attr==INVALID_FILE_ATTRIBUTES){set_status(L"Address does not exist. Check the path and try again.");return;}
  if(attr&FILE_ATTRIBUTE_DIRECTORY){int n=catalog_add_tree(path);wchar_t msg[160];swprintf(msg,160,L"Indexed %d images from this folder",n);set_status(msg);}
  else catalog_add(path);
- SetWindowTextW(search_edit,path);active_tag[0]=0;SendMessageW(tag_list,LB_SETCURSEL,0,0);refresh_catalog();
+ SetWindowTextW(search_edit,path);active_tag[0]=0;no_tags_filter=0;SendMessageW(tag_list,LB_SETCURSEL,0,0);refresh_catalog();
 }
 static void apply_tags(void){
  int i=ListView_GetNextItem(photo_list,-1,LVNI_SELECTED);if(i<0){set_status(L"Select photos in the gallery first.");return;}
@@ -558,12 +566,16 @@ static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   make_button(w,L"Open photo",ID_OPEN,0,0,100,32);
   make_button(w,L"Month tag",ID_MONTH_TAG,0,0,104,32);
   make_button(w,L"Year tag",ID_YEAR_TAG,0,0,96,32);
+  make_button(w,L"Rename",ID_RENAME_SELECTED,0,0,82,32);
+  make_button(w,L"Cut",ID_CUT_SELECTED,0,0,82,32);
+  make_button(w,L"Copy",ID_COPY_SELECTED,0,0,82,32);
   photo_list=CreateWindowExW(0,WC_LISTVIEWW,L"",WS_CHILD|WS_VISIBLE|WS_BORDER|LVS_ICON|LVS_OWNERDATA|LVS_SHOWSELALWAYS,0,0,800,600,w,(HMENU)(INT_PTR)ID_LIST,app_instance,NULL);
   ListView_SetExtendedListViewStyle(photo_list,LVS_EX_DOUBLEBUFFER|LVS_EX_LABELTIP|LVS_EX_BORDERSELECT);ListView_SetBkColor(photo_list,bg_main);ListView_SetTextBkColor(photo_list,bg_main);ListView_SetTextColor(photo_list,fg_main);
   thumbnail_list=ImageList_Create(176,136,ILC_COLOR32|ILC_MASK,THUMBNAIL_SLOTS,16);ListView_SetImageList(photo_list,thumbnail_list,LVSIL_NORMAL);for(int si=0;si<THUMBNAIL_SLOTS;si++)slot_photo[si]=-1;
   status_text=make_label(w,L"Ready",0,0,500,20,font_small,fg_muted);
   InitializeCriticalSection(&thumbnail_lock);thumbnail_event=CreateEventW(NULL,FALSE,FALSE,NULL);if(thumbnail_event)thumbnail_thread=CreateThread(NULL,0,thumbnail_worker,NULL,0,NULL);
   if(!thumbnail_thread)set_status(L"Thumbnail worker could not start; gallery images may remain blank.");
+  preferred_drop_effect_format=RegisterClipboardFormatW(L"Preferred DropEffect");AddClipboardFormatListener(w);
   if(!catalog_open())MessageBoxW(w,L"Could not open the local photo catalog.",L"Tag Explorer",MB_ICONERROR);
   refresh_catalog();return 0;
  }
@@ -578,13 +590,17 @@ static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   MoveWindow(GetDlgItem(w,ID_OPEN),SIDEBAR_W+406,TOP_H+48,100,32,TRUE);
   MoveWindow(GetDlgItem(w,ID_MONTH_TAG),SIDEBAR_W+516,TOP_H+48,104,32,TRUE);
   MoveWindow(GetDlgItem(w,ID_YEAR_TAG),SIDEBAR_W+628,TOP_H+48,96,32,TRUE);
+  MoveWindow(GetDlgItem(w,ID_RENAME_SELECTED),width-282,TOP_H+48,82,32,TRUE);
+  MoveWindow(GetDlgItem(w,ID_CUT_SELECTED),width-190,TOP_H+48,82,32,TRUE);
+  MoveWindow(GetDlgItem(w,ID_COPY_SELECTED),width-98,TOP_H+48,82,32,TRUE);
   MoveWindow(tag_list,18,438,242,height-460>100?height-460:100,TRUE);
   MoveWindow(GetDlgItem(w,ID_SHELL),20,height-52,238,36,TRUE);
   }return 0;
  case WM_COMMAND:
-  switch(LOWORD(wp)){case ID_ADD_FOLDER:browse_folder();break;case ID_ADD_FILES:add_files();break;case ID_REFRESH:refresh_catalog();break;case ID_NAVIGATE:navigate_address();break;case ID_APPLY_TAGS:apply_tags();break;case ID_OPEN:show_viewer();break;case ID_MONTH_TAG:choose_month_tag(w);break;case ID_YEAR_TAG:enter_year_tag(w);break;case ID_SHELL:install_shell_menu();break;case ID_SEARCH:if(HIWORD(wp)==EN_CHANGE){}break;case ID_TAG:if(HIWORD(wp)==CBN_EDITCHANGE){tag_combo_update_suggestions(tag_edit);break;}if(HIWORD(wp)==CBN_SELENDOK){tag_combo_accept_suggestion(tag_edit);break;}break;case ID_SOURCE_LIST:if(HIWORD(wp)==LBN_SELCHANGE){active_tag[0]=0;SendMessageW(tag_list,LB_SETCURSEL,0,0);refresh_catalog();}break;case ID_TAG_LIST:if(HIWORD(wp)==LBN_SELCHANGE){int sel=(int)SendMessageW(tag_list,LB_GETCURSEL,0,0);if(sel<=0)active_tag[0]=0;else if(sel-1<tag_name_count)lstrcpynW(active_tag,tag_names[sel-1],256);refresh_catalog();}break;}return 0;
+  switch(LOWORD(wp)){case ID_ADD_FOLDER:browse_folder();break;case ID_ADD_FILES:add_files();break;case ID_REFRESH:refresh_catalog();break;case ID_NAVIGATE:navigate_address();break;case ID_APPLY_TAGS:apply_tags();break;case ID_OPEN:show_viewer();break;case ID_MONTH_TAG:choose_month_tag(w);break;case ID_YEAR_TAG:enter_year_tag(w);break;case ID_RENAME_SELECTED:rename_selected_photo(w);break;case ID_CUT_SELECTED:set_selected_files_on_clipboard(1);break;case ID_COPY_SELECTED:set_selected_files_on_clipboard(0);break;case ID_SHELL:install_shell_menu();break;case ID_SEARCH:if(HIWORD(wp)==EN_CHANGE){}break;case ID_TAG:if(HIWORD(wp)==CBN_EDITCHANGE){tag_combo_update_suggestions(tag_edit);break;}if(HIWORD(wp)==CBN_SELENDOK){tag_combo_accept_suggestion(tag_edit);break;}break;case ID_SOURCE_LIST:if(HIWORD(wp)==LBN_SELCHANGE){active_tag[0]=0;no_tags_filter=0;SendMessageW(tag_list,LB_SETCURSEL,0,0);refresh_catalog();}break;case ID_TAG_LIST:if(HIWORD(wp)==LBN_SELCHANGE){int sel=(int)SendMessageW(tag_list,LB_GETCURSEL,0,0);active_tag[0]=0;no_tags_filter=(sel==1);if(sel>=2&&sel-2<tag_name_count)lstrcpynW(active_tag,tag_names[sel-2],256);refresh_catalog();}break;}return 0;
  case WM_KEYDOWN:if(wp==VK_RETURN&&GetFocus()==address_edit){navigate_address();return 0;}break;
  case WM_APP_THUMBNAIL_READY:accept_thumbnail((ThumbReady*)lp);return 0;
+ case WM_CLIPBOARDUPDATE:if(own_clipboard_sequence&&GetClipboardSequenceNumber()!=own_clipboard_sequence){for(int i=0;i<photo_count;i++)ListView_SetItemState(photo_list,i,0,LVIS_CUT);own_clipboard_sequence=0;}return 0;
  case WM_NOTIFY:
   if(((NMHDR*)lp)->idFrom==ID_LIST){
    if(((NMHDR*)lp)->code==LVN_GETDISPINFOW){NMLVDISPINFOW *di=(NMLVDISPINFOW*)lp;int row=di->item.iItem;
@@ -594,12 +610,14 @@ static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
     }return 0;
    }
    if(((NMHDR*)lp)->code==NM_DBLCLK)show_viewer();
+   if(((NMHDR*)lp)->code==LVN_KEYDOWN){NMLVKEYDOWN *key=(NMLVKEYDOWN*)lp;if(GetKeyState(VK_CONTROL)&0x8000){if(key->wVKey=='C')set_selected_files_on_clipboard(0);else if(key->wVKey=='X')set_selected_files_on_clipboard(1);}else if(key->wVKey==VK_F2)rename_selected_photo(w);}
+   if(((NMHDR*)lp)->code==NM_RCLICK){POINT pt;GetCursorPos(&pt);HMENU menu=CreatePopupMenu();if(menu){AppendMenuW(menu,MF_STRING,ID_RENAME_SELECTED,L"Rename");AppendMenuW(menu,MF_STRING,ID_CUT_SELECTED,L"Cut");AppendMenuW(menu,MF_STRING,ID_COPY_SELECTED,L"Copy");int cmd=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_RIGHTBUTTON,pt.x,pt.y,0,w,NULL);DestroyMenu(menu);if(cmd==ID_RENAME_SELECTED)rename_selected_photo(w);else if(cmd==ID_CUT_SELECTED)set_selected_files_on_clipboard(1);else if(cmd==ID_COPY_SELECTED)set_selected_files_on_clipboard(0);}}
   }return 0;
  case WM_CTLCOLORSTATIC:{HDC dc=(HDC)wp;HWND ctl=(HWND)lp;SetBkMode(dc,TRANSPARENT);HANDLE c=GetPropW(ctl,L"TagExplorerTextColor");SetTextColor(dc,c?(COLORREF)((ULONG_PTR)c-1):fg_main);return (LRESULT)GetStockObject(NULL_BRUSH);}
  case WM_CTLCOLOREDIT:{HDC dc=(HDC)wp;SetTextColor(dc,fg_main);SetBkColor(dc,bg_input);return (LRESULT)GetStockObject(DKGRAY_BRUSH);}
  case WM_CTLCOLORLISTBOX:{HDC dc=(HDC)wp;SetTextColor(dc,fg_main);SetBkColor(dc,bg_panel);return (LRESULT)GetStockObject(DKGRAY_BRUSH);}
  case WM_ERASEBKGND:{RECT rc;GetClientRect(w,&rc);HBRUSH base=CreateSolidBrush(bg_main);FillRect((HDC)wp,&rc,base);DeleteObject(base);RECT side={0,0,SIDEBAR_W,rc.bottom};HBRUSH panel=CreateSolidBrush(bg_panel);FillRect((HDC)wp,&side,panel);DeleteObject(panel);return 1;}
- case WM_DESTROY:InterlockedIncrement(&thumbnail_generation);if(thumbnail_event){EnterCriticalSection(&thumbnail_lock);thumbnail_head=thumbnail_tail=thumbnail_count=0;thumbnail_stopping=1;SetEvent(thumbnail_event);LeaveCriticalSection(&thumbnail_lock);}if(thumbnail_thread){WaitForSingleObject(thumbnail_thread,INFINITE);CloseHandle(thumbnail_thread);}if(thumbnail_event)CloseHandle(thumbnail_event);DeleteCriticalSection(&thumbnail_lock);free_results();if(tag_names){for(int i=0;i<tag_name_count;i++)free(tag_names[i]);free(tag_names);}if(thumbnail_list)ImageList_Destroy(thumbnail_list);catalog_close();if(font_ui)DeleteObject(font_ui);if(font_small)DeleteObject(font_small);if(font_title)DeleteObject(font_title);icons_shutdown();PostQuitMessage(0);return 0;
+ case WM_DESTROY:RemoveClipboardFormatListener(w);InterlockedIncrement(&thumbnail_generation);if(thumbnail_event){EnterCriticalSection(&thumbnail_lock);thumbnail_head=thumbnail_tail=thumbnail_count=0;thumbnail_stopping=1;SetEvent(thumbnail_event);LeaveCriticalSection(&thumbnail_lock);}if(thumbnail_thread){WaitForSingleObject(thumbnail_thread,INFINITE);CloseHandle(thumbnail_thread);}if(thumbnail_event)CloseHandle(thumbnail_event);DeleteCriticalSection(&thumbnail_lock);free_results();if(tag_names){for(int i=0;i<tag_name_count;i++)free(tag_names[i]);free(tag_names);}if(thumbnail_list)ImageList_Destroy(thumbnail_list);catalog_close();if(font_ui)DeleteObject(font_ui);if(font_small)DeleteObject(font_small);if(font_title)DeleteObject(font_title);icons_shutdown();PostQuitMessage(0);return 0;
  }return DefWindowProcW(w,msg,wp,lp);
 }
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR command_line,int show){
