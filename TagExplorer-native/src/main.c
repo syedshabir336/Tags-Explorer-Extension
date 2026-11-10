@@ -48,6 +48,7 @@
 #define WM_APP_ROTATE_COMPLETE (WM_APP+41)
 #define WM_APP_THUMBNAIL_READY (WM_APP+42)
 #define THUMBNAIL_SLOTS 256
+static HWND main_window;
 static HWND viewer_tags_edit,viewer_window,viewer_status;
 static HACCEL viewer_accel;
 static int viewer_rotation_busy;
@@ -141,7 +142,7 @@ static void refresh_catalog(void){
  thumbnail_head=thumbnail_tail=thumbnail_count=0;
  LeaveCriticalSection(&thumbnail_lock);
  ListView_SetItemCountEx(photo_list,0,LVSICF_NOINVALIDATEALL|LVSICF_NOSCROLL);
- free_results();ImageList_RemoveAll(thumbnail_list);thumbnail_slot_count=thumbnail_next_slot=0;
+ free_results();ImageList_RemoveAll(thumbnail_list);thumbnail_slot_count=thumbnail_next_slot=0;for(int si=0;si<THUMBNAIL_SLOTS;si++)slot_photo[si]=-1;
  wchar_t query[512];GetWindowTextW(search_edit,query,512);
  if(!catalog_search(query,active_tag,&photo_paths,&photo_tags,&photo_count)){set_status(L"Unable to read the photo catalog.");return;}
  if(photo_count){
@@ -477,6 +478,7 @@ static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   thumbnail_list=ImageList_Create(176,136,ILC_COLOR32|ILC_MASK,THUMBNAIL_SLOTS,16);ListView_SetImageList(photo_list,thumbnail_list,LVSIL_NORMAL);for(int si=0;si<THUMBNAIL_SLOTS;si++)slot_photo[si]=-1;
   status_text=make_label(w,L"Ready",0,0,500,20,font_small,fg_muted);
   InitializeCriticalSection(&thumbnail_lock);thumbnail_event=CreateEventW(NULL,FALSE,FALSE,NULL);if(thumbnail_event)thumbnail_thread=CreateThread(NULL,0,thumbnail_worker,NULL,0,NULL);
+  if(!thumbnail_thread)set_status(L"Thumbnail worker could not start; gallery images may remain blank.");
   if(!catalog_open())MessageBoxW(w,L"Could not open the local photo catalog.",L"Tag Explorer",MB_ICONERROR);
   refresh_catalog();return 0;
  }
