@@ -462,7 +462,8 @@ static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   make_button(w,L"Month tag",ID_VIEW_MONTH_TAG,344,12,100,34);
   make_button(w,L"Year tag",ID_VIEW_YEAR_TAG,452,12,90,34);
   viewer_tags_edit=make_tag_combo(w,ID_VIEW_TAGS,550,12,260,260);
-  make_button(w,L"Add tags",ID_VIEW_APPLY_TAGS,820,12,88,34);\n  make_button(w,L"Edit tags",ID_VIEW_EDIT_TAGS,914,12,88,34);
+  make_button(w,L"Add tags",ID_VIEW_APPLY_TAGS,820,12,88,34);
+ make_button(w,L"Edit tags",ID_VIEW_EDIT_TAGS,914,12,88,34);
   make_button(w,L"Previous",ID_VIEW_PREVIOUS,924,12,82,34);
   make_button(w,L"Next",ID_VIEW_NEXT,1014,12,68,34);
   viewer_tags_label=make_label(w,L"Tags: (none)",16,54,1000,42,font_small,fg_muted);
@@ -499,7 +500,8 @@ static LRESULT CALLBACK viewer_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
    }
    case ID_VIEW_PREVIOUS:if(photo_count){viewer_index=(viewer_index+photo_count-1)%photo_count;viewer_rotation=0;SetWindowTextW(w,PathFindFileNameW(photo_paths[viewer_index]));viewer_refresh_tags();InvalidateRect(w,NULL,TRUE);}SetFocus(w);return 0;
    case ID_VIEW_NEXT:if(photo_count){viewer_index=(viewer_index+1)%photo_count;viewer_rotation=0;SetWindowTextW(w,PathFindFileNameW(photo_paths[viewer_index]));viewer_refresh_tags();InvalidateRect(w,NULL,TRUE);}SetFocus(w);return 0;
-   case ID_VIEW_RENAME:viewer_rename(w);SetFocus(w);return 0;\n   case ID_VIEW_EDIT_TAGS:edit_viewer_tags(w);SetFocus(w);return 0;
+   case ID_VIEW_RENAME:viewer_rename(w);SetFocus(w);return 0;
+  case ID_VIEW_EDIT_TAGS:edit_viewer_tags(w);SetFocus(w);return 0;
    case ID_VIEW_MONTH_TAG:viewer_choose_month_tag(w);SetFocus(w);return 0;
    case ID_VIEW_YEAR_TAG:viewer_enter_year_tag(w);SetFocus(w);return 0;
    case ID_VIEW_APPLY_TAGS:{wchar_t tags[512];GetWindowTextW(viewer_tags_edit,tags,512);if(viewer_index>=0&&viewer_index<photo_count&&tags[0]&&catalog_apply_tags(photo_paths[viewer_index],tags)){SetWindowTextW(viewer_tags_edit,L"");viewer_refresh_tags();set_viewer_status(L"Tags added to this photo.");}else set_viewer_status(L"Enter one or more comma-separated tags.");return 0;}
@@ -594,7 +596,8 @@ static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   make_button(w,L"Year tag",ID_YEAR_TAG,0,0,96,32);
   make_button(w,L"Rename",ID_RENAME_SELECTED,0,0,82,32);
   make_button(w,L"Cut",ID_CUT_SELECTED,0,0,82,32);
-  make_button(w,L"Copy",ID_COPY_SELECTED,0,0,82,32);\n  make_button(w,L"Edit tags",ID_EDIT_SELECTED_TAGS,0,0,92,32);
+  make_button(w,L"Copy",ID_COPY_SELECTED,0,0,82,32);
+ make_button(w,L"Edit tags",ID_EDIT_SELECTED_TAGS,0,0,92,32);
   photo_list=CreateWindowExW(0,WC_LISTVIEWW,L"",WS_CHILD|WS_VISIBLE|WS_BORDER|LVS_ICON|LVS_OWNERDATA|LVS_SHOWSELALWAYS,0,0,800,600,w,(HMENU)(INT_PTR)ID_LIST,app_instance,NULL);
   ListView_SetExtendedListViewStyle(photo_list,LVS_EX_DOUBLEBUFFER|LVS_EX_LABELTIP|LVS_EX_BORDERSELECT);ListView_SetBkColor(photo_list,bg_main);ListView_SetTextBkColor(photo_list,bg_main);ListView_SetTextColor(photo_list,fg_main);
   thumbnail_list=ImageList_Create(176,136,ILC_COLOR32|ILC_MASK,THUMBNAIL_SLOTS,16);ListView_SetImageList(photo_list,thumbnail_list,LVSIL_NORMAL);for(int si=0;si<THUMBNAIL_SLOTS;si++)slot_photo[si]=-1;
@@ -615,7 +618,8 @@ static LRESULT CALLBACK main_proc(HWND w,UINT msg,WPARAM wp,LPARAM lp){
   MoveWindow(GetDlgItem(w,ID_APPLY_TAGS),SIDEBAR_W+292,TOP_H+48,104,32,TRUE);
   MoveWindow(GetDlgItem(w,ID_OPEN),SIDEBAR_W+406,TOP_H+48,100,32,TRUE);
   MoveWindow(GetDlgItem(w,ID_MONTH_TAG),SIDEBAR_W+516,TOP_H+48,104,32,TRUE);
-  MoveWindow(GetDlgItem(w,ID_YEAR_TAG),SIDEBAR_W+628,TOP_H+48,96,32,TRUE);\n  MoveWindow(GetDlgItem(w,ID_EDIT_SELECTED_TAGS),SIDEBAR_W+734,TOP_H+48,92,32,TRUE);
+  MoveWindow(GetDlgItem(w,ID_YEAR_TAG),SIDEBAR_W+628,TOP_H+48,96,32,TRUE);
+ MoveWindow(GetDlgItem(w,ID_EDIT_SELECTED_TAGS),SIDEBAR_W+734,TOP_H+48,92,32,TRUE);
   MoveWindow(GetDlgItem(w,ID_RENAME_SELECTED),width-282,TOP_H+48,82,32,TRUE);
   MoveWindow(GetDlgItem(w,ID_CUT_SELECTED),width-190,TOP_H+48,82,32,TRUE);
   MoveWindow(GetDlgItem(w,ID_COPY_SELECTED),width-98,TOP_H+48,82,32,TRUE);
