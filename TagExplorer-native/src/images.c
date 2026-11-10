@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wctype.h>
 static IWICImagingFactory *factory;
 static HRESULT factory_get(void){if(factory)return S_OK;return CoCreateInstance(&CLSID_WICImagingFactory,NULL,CLSCTX_INPROC_SERVER,&IID_IWICImagingFactory,(void**)&factory);}
 static IWICBitmapSource *decode_scaled(const wchar_t *path,UINT edge){
