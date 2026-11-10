@@ -14,7 +14,7 @@ int catalog_open(void){
  PathAppendW(dir,L"TagExplorer");CreateDirectoryW(dir,NULL);lstrcpynW(file,dir,MAX_PATH);PathAppendW(file,L"catalog.db");
  char *p=to_utf8(file);if(!p)return 0;int rc=sqlite3_open_v2(p,&db,SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE|SQLITE_OPEN_FULLMUTEX,NULL);free(p);if(rc!=SQLITE_OK)return 0;
  sqlite3_busy_timeout(db,3000);
- if(!sql("PRAGMA journal_mode=WAL;PRAGMA foreign_keys=ON;"
+ if(!sql("PRAGMA journal_mode=WAL;PRAGMA synchronous=NORMAL;PRAGMA temp_store=MEMORY;PRAGMA cache_size=-16000;PRAGMA foreign_keys=ON;"
  "CREATE TABLE IF NOT EXISTS Images(Path TEXT PRIMARY KEY COLLATE NOCASE);"
  "CREATE TABLE IF NOT EXISTS Tags(Id INTEGER PRIMARY KEY,Name TEXT NOT NULL COLLATE NOCASE UNIQUE,Color TEXT NOT NULL DEFAULT '#5B8DEF');"
  "CREATE TABLE IF NOT EXISTS PhotoTags(PhotoPath TEXT NOT NULL COLLATE NOCASE,TagId INTEGER NOT NULL REFERENCES Tags(Id) ON DELETE CASCADE,PRIMARY KEY(PhotoPath,TagId));"
@@ -102,13 +102,25 @@ int catalog_list_tags(wchar_t ***names,int *count){
 int catalog_search(const wchar_t *query,const wchar_t *tag_filter,wchar_t ***paths,wchar_t ***tags,int *count){
  *paths=NULL;*tags=NULL;*count=0;char *q=to_utf8(query?query:L""),*tag=to_utf8(tag_filter?tag_filter:L"");if(!q||!tag){free(q);free(tag);return 0;}
  const char *statement="SELECT i.Path,COALESCE((SELECT group_concat(t.Name,', ') FROM Tags t JOIN PhotoTags pt ON pt.TagId=t.Id WHERE pt.PhotoPath=i.Path),'') FROM Images i WHERE (?1='' OR i.Path LIKE ?2 OR EXISTS(SELECT 1 FROM PhotoTags p JOIN Tags t ON t.Id=p.TagId WHERE p.PhotoPath=i.Path AND t.Name LIKE ?2)) AND (?3='' OR EXISTS(SELECT 1 FROM PhotoTags p2 JOIN Tags t2 ON t2.Id=p2.TagId WHERE p2.PhotoPath=i.Path AND t2.Name=?3 COLLATE NOCASE)) ORDER BY i.Path";
- sqlite3_stmt *s=NULL;int ok=sqlite3_prepare_v2(db,statement,-1,&s,NULL)==SQLITE_OK;
+ sqlite3_stmt *s=NULL;int ok=sqlite3_prepare_v2(db,statement,-1,&s,NULL)==SQLITE_OK;int capacity=0;
  if(ok){size_t z=strlen(q)+3;char *like=(char*)malloc(z);if(!like)ok=0;else{snprintf(like,z,"%%%s%%",q);sqlite3_bind_text(s,1,q,-1,SQLITE_TRANSIENT);sqlite3_bind_text(s,2,like,-1,SQLITE_TRANSIENT);sqlite3_bind_text(s,3,tag,-1,SQLITE_TRANSIENT);free(like);
-  while(sqlite3_step(s)==SQLITE_ROW){wchar_t *wp=to_wide(sqlite3_column_text(s,0));if(!wp)continue;if(GetFileAttributesW(wp)==INVALID_FILE_ATTRIBUTES){free(wp);continue;}
-   wchar_t **np=(wchar_t**)realloc(*paths,(size_t)(*count+1)*sizeof(wchar_t*));if(!np){free(wp);ok=0;break;}*paths=np;
-   wchar_t **nt=(wchar_t**)realloc(*tags,(size_t)(*count+1)*sizeof(wchar_t*));if(!nt){free(wp);ok=0;break;}*tags=nt;
-   (*paths)[*count]=wp;(*tags)[*count]=to_wide(sqlite3_column_text(s,1));(*count)++;
+  while(sqlite3_step(s)==SQLITE_ROW){
+   wchar_t *wp=to_wide(sqlite3_column_text(s,0));if(!wp)continue;
+   if(GetFileAttributesW(wp)==INVALID_FILE_ATTRIBUTES){free(wp);continue;}
+   if(*count==capacity){
+    int next=capacity?capacity*2:256;
+    wchar_t **np=(wchar_t**)malloc((size_t)next*sizeof(wchar_t*));
+    wchar_t **nt=(wchar_t**)malloc((size_t)next*sizeof(wchar_t*));
+    if(!np||!nt){free(np);free(nt);free(wp);ok=0;break;}
+    if(*count){memcpy(np,*paths,(size_t)*count*sizeof(wchar_t*));memcpy(nt,*tags,(size_t)*count*sizeof(wchar_t*));}
+    free(*paths);free(*tags);*paths=np;*tags=nt;capacity=next;
+   }
+   wchar_t *wt=to_wide(sqlite3_column_text(s,1));
+   if(!wt){free(wp);ok=0;break;}
+   (*paths)[*count]=wp;(*tags)[*count]=wt;(*count)++;
   }}
- }sqlite3_finalize(s);free(q);free(tag);return ok;
+ }sqlite3_finalize(s);free(q);free(tag);
+ if(!ok){catalog_free_results(*paths,*tags,*count);*paths=NULL;*tags=NULL;*count=0;}
+ return ok;
 }
 void catalog_free_results(wchar_t **p,wchar_t **t,int n){for(int i=0;i<n;i++){free(p[i]);free(t[i]);}free(p);free(t);}
